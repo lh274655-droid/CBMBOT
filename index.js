@@ -1,5 +1,7 @@
 const admin = require("firebase-admin");
-const fetch = require("node-fetch");
+
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
@@ -8,7 +10,6 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
-
 const WEBHOOK = process.env.DISCORD_WEBHOOK;
 
 async function enviarLogs() {
@@ -28,10 +29,10 @@ async function enviarLogs() {
           title: "🚨 LOG DO SISTEMA",
           color: 15158332,
           fields: [
-            { name: "Usuário", value: log.usuario || "N/A", inline: true },
-            { name: "Ação", value: log.acao || "N/A", inline: true },
-            { name: "Módulo", value: log.modulo || "N/A", inline: true },
-            { name: "Data", value: log.data || "N/A" }
+            { name: "Usuário", value: String(log.usuario || "N/A"), inline: true },
+            { name: "Ação", value: String(log.acao || "N/A"), inline: true },
+            { name: "Módulo", value: String(log.modulo || "N/A"), inline: true },
+            { name: "Data", value: String(log.data || "N/A") }
           ]
         }]
       })
@@ -39,4 +40,4 @@ async function enviarLogs() {
   }
 }
 
-enviarLogs();
+enviarLogs().catch(console.error);
