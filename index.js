@@ -10,38 +10,35 @@ admin.initializeApp({
 const db = admin.firestore();
 const WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-let ultimoEnviado = 0;
+function formatarData(valor) {
+  if (!valor) return "N/A";
 
-// limpa texto
-function limpar(txt) {
-  if (!txt) return "Sem informação";
-
-  txt = txt.replace(/\[.*?\]/g, "").trim();
-
-  // corrige nomes em caps
-  return txt.replace(/\b[A-Z]{3,}\b/g, (w) =>
-    w.charAt(0) + w.slice(1).toLowerCase()
-  );
+  try {
+    return new Date(valor).toLocaleString("pt-BR");
+  } catch {
+    return String(valor);
+  }
 }
 
-// formata data
-function formatarData(ms) {
-  return new Date(ms).toLocaleString("pt-BR");
+function limparTexto(txt) {
+  if (!txt) return "Sem informação";
+
+  return String(txt)
+    .replace(/\[.*?\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function enviarLogs() {
   const snapshot = await db.collection("logs")
-    .orderBy("data", "asc")
+    .orderBy("data", "desc")
+    .limit(5)
     .get();
 
   for (const doc of snapshot.docs) {
     const log = doc.data();
 
-    if (!log.data || log.data <= ultimoEnviado) continue;
-
-    ultimoEnviado = log.data;
-
-    const mensagem = limpar(log.txt);
+    const mensagem = limparTexto(log.txt);
     const data = formatarData(log.data);
 
     await fetch(WEBHOOK, {
@@ -61,19 +58,4 @@ async function enviarLogs() {
   }
 }
 
-// loop contínuo
-async function loop() {
-  console.log("Sistema rodando...");
-
-  while (true) {
-    try {
-      await enviarLogs();
-    } catch (e) {
-      console.error(e);
-    }
-
-    await new Promise(r => setTimeout(r, 60000)); // 1 minuto
-  }
-}
-
-loop();
+enviarLogs().catch(console.error);
