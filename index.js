@@ -85,7 +85,7 @@ const CARGOS = {
   },
   "Capitão": {
     principal: "1483562466301579335",
-    extras: [],
+    extras: ["1483562466276282510"],
     prefixo: "[✧✧✧]"
   },
   "Major": {
