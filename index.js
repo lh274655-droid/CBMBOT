@@ -25,22 +25,84 @@ const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
 const IMAGEM_PAINEL = "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
+const EXTRA_OFICIAL = "1483562466276282510";
+
 const CARGOS = {
-  "Soldado 2ºCL": { principal: "1487872436975173704", extras: [], prefixo: "[•]" },
-  "Soldado 1ºCL": { principal: "1483562466276282517", extras: [], prefixo: "[••]" },
-  "Cabo": { principal: "1483562466276282518", extras: [], prefixo: "[•••]" },
-  "3º Sargento": { principal: "1483562466289127606", extras: [], prefixo: "[✦]" },
-  "2º Sargento": { principal: "1483562466289127607", extras: [], prefixo: "[✦✦]" },
-  "1º Sargento": { principal: "1483562466289127608", extras: [], prefixo: "[✦✦✦]" },
-  "Subtenente": { principal: "1483562466289127609", extras: [], prefixo: "[✶]" },
-  "Aspirante a Oficial": { principal: "1483562466289127611", extras: [], prefixo: "[✶✶]" },
-  "2º Tenente": { principal: "1483562466289127613", extras: [], prefixo: "[✶✶✶]" },
-  "1º Tenente": { principal: "1483562466289127614", extras: [], prefixo: "[✷✷]" },
-  "Capitão": { principal: "1483562466301579335", extras: [], prefixo: "[✷✷✷]" },
-  "Major": { principal: "1483562466301579337", extras: [], prefixo: "[✹]" },
-  "Tenente-Coronel": { principal: "1483562466301579338", extras: [], prefixo: "[✹✹]" },
-  "Coronel": { principal: "1483562466301579339", extras: [], prefixo: "[✹✹✹]" },
-  "Comandante Geral": { principal: "1483562466309837047", extras: [], prefixo: "[✪✪✪]" }
+  "Soldado 2ºCL": {
+    principal: "1487872436975173704",
+    extras: [],
+    prefixo: "[❯²]"
+  },
+  "Soldado 1ºCL": {
+    principal: "1483562466276282517",
+    extras: [],
+    prefixo: "[❯¹]"
+  },
+  "Cabo": {
+    principal: "1483562466276282518",
+    extras: [],
+    prefixo: "[❯❯]"
+  },
+  "3º Sargento": {
+    principal: "1483562466289127606",
+    extras: [],
+    prefixo: "[❯❯❯]"
+  },
+  "2º Sargento": {
+    principal: "1483562466289127607",
+    extras: [],
+    prefixo: "[❯❯❯❯]"
+  },
+  "1º Sargento": {
+    principal: "1483562466289127608",
+    extras: [],
+    prefixo: "[❯❯❯❯❯]"
+  },
+  "Subtenente": {
+    principal: "1483562466289127609",
+    extras: [],
+    prefixo: "[△]"
+  },
+  "Aspirante a Oficial": {
+    principal: "1483562466289127611",
+    extras: [],
+    prefixo: "[✯]"
+  },
+  "2º Tenente": {
+    principal: "1483562466289127613",
+    extras: [],
+    prefixo: "[✧]"
+  },
+  "1º Tenente": {
+    principal: "1483562466289127614",
+    extras: [],
+    prefixo: "[✧✧]"
+  },
+  "Capitão": {
+    principal: "1483562466301579335",
+    extras: [EXTRA_OFICIAL],
+    prefixo: "[✧✧✧]"
+  },
+  "Major": {
+    principal: "1483562466301579337",
+    extras: [EXTRA_OFICIAL],
+    prefixo: "[✵✧✧]"
+  },
+  "Tenente-Coronel": {
+    principal: "1483562466301579338",
+    extras: [EXTRA_OFICIAL],
+    prefixo: "[✵✵✧]"
+  },
+  "Coronel": {
+    principal: "1483562466301579339",
+    extras: [EXTRA_OFICIAL],
+    prefixo: "[✵✵✵]"
+  },
+  "Comandante Geral": {
+    principal: "1483562466309837047",
+    extras: [EXTRA_OFICIAL],
+    prefixo: "[☫∗⁑]"
+  }
 };
 
 function criarSelectCargo(userId, selecionado = null) {
@@ -49,7 +111,7 @@ function criarSelectCargo(userId, selecionado = null) {
       .setCustomId(`cargo_${userId}`)
       .setPlaceholder("Selecione o cargo")
       .addOptions(
-        Object.keys(CARGOS).map(nome => ({
+        Object.keys(CARGOS).map((nome) => ({
           label: nome,
           value: nome,
           default: nome === selecionado
@@ -71,9 +133,7 @@ function criarBotoesAprovacao(userId, cargoSelecionado = "nenhum") {
   );
 }
 
-client.once(Events.ClientReady, async () => {
-  console.log(`🔥 Bot online: ${client.user.tag}`);
-
+async function criarOuAtualizarPainel() {
   const canal = await client.channels.fetch(CANAL_PORTARIA).catch(() => null);
 
   if (!canal) {
@@ -100,15 +160,20 @@ client.once(Events.ClientReady, async () => {
 
   try {
     const mensagens = await canal.messages.fetch({ limit: 20 }).catch(() => null);
+
     const existente = mensagens?.find(
-      m => m.author.id === client.user.id &&
-      m.embeds?.[0]?.title === "🚒 Sistema de Ingresso - Corpo de Bombeiros Militar"
+      (m) =>
+        m.author.id === client.user.id &&
+        m.embeds?.[0]?.title === "🚒 Sistema de Ingresso - Corpo de Bombeiros Militar"
     );
 
     if (existente) {
-      await existente.edit({ embeds: [embed], components: [row] });
+      await existente.edit({
+        embeds: [embed],
+        components: [row]
+      });
       await existente.pin().catch(() => {});
-      console.log("✅ Painel já existia e foi atualizado.");
+      console.log("✅ Painel atualizado.");
     } else {
       const msg = await canal.send({
         embeds: [embed],
@@ -120,6 +185,11 @@ client.once(Events.ClientReady, async () => {
   } catch (err) {
     console.log("❌ Erro ao criar painel:", err.message);
   }
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`🔥 Bot online: ${client.user.tag}`);
+  await criarOuAtualizarPainel();
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -283,7 +353,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const prefixo = configCargo.prefixo || "[CBM]";
-      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch(() => {});
+      const nomeBase = membro.displayName.replace(/^\[.*?\]\s*/, "").trim();
+
+      await membro.setNickname(`${prefixo} ${nomeBase}`).catch(() => {});
 
       const embedAprovado = new EmbedBuilder()
         .setColor(0x00b300)
