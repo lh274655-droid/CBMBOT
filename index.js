@@ -23,85 +23,90 @@ const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
+// primeira vez deixa vazio; depois cole o id da mensagem criada
+let MENSAGEM_PAINEL = "";
+
 const IMAGEM_PAINEL = "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
-const EXTRA_OFICIAL = "1483562466276282510";
-
+// cada cargo pode ter:
+// principal = cargo principal
+// extras = cargos adicionais
+// prefixo = prefixo do nick em símbolo
 const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
     extras: [],
-    prefixo: "[❯²]"
+    prefixo: "[•]"
   },
   "Soldado 1ºCL": {
     principal: "1483562466276282517",
     extras: [],
-    prefixo: "[❯¹]"
+    prefixo: "[••]"
   },
   "Cabo": {
     principal: "1483562466276282518",
     extras: [],
-    prefixo: "[❯❯]"
+    prefixo: "[•••]"
   },
   "3º Sargento": {
     principal: "1483562466289127606",
     extras: [],
-    prefixo: "[❯❯❯]"
+    prefixo: "[✦]"
   },
   "2º Sargento": {
     principal: "1483562466289127607",
     extras: [],
-    prefixo: "[❯❯❯❯]"
+    prefixo: "[✦✦]"
   },
   "1º Sargento": {
     principal: "1483562466289127608",
     extras: [],
-    prefixo: "[❯❯❯❯❯]"
+    prefixo: "[✦✦✦]"
   },
   "Subtenente": {
     principal: "1483562466289127609",
     extras: [],
-    prefixo: "[△]"
+    prefixo: "[✶]"
   },
   "Aspirante a Oficial": {
     principal: "1483562466289127611",
     extras: [],
-    prefixo: "[✯]"
+    prefixo: "[✶✶]"
   },
   "2º Tenente": {
     principal: "1483562466289127613",
     extras: [],
-    prefixo: "[✧]"
+    prefixo: "[✶✶✶]"
   },
   "1º Tenente": {
     principal: "1483562466289127614",
     extras: [],
-    prefixo: "[✧✧]"
+    prefixo: "[✷✷]"
   },
   "Capitão": {
     principal: "1483562466301579335",
-    extras: [EXTRA_OFICIAL],
-    prefixo: "[✧✧✧]"
+    extras: [],
+    prefixo: "[✷✷✷]"
   },
   "Major": {
     principal: "1483562466301579337",
-    extras: [EXTRA_OFICIAL],
-    prefixo: "[✵✧✧]"
+    extras: [],
+    prefixo: "[✹]"
   },
   "Tenente-Coronel": {
     principal: "1483562466301579338",
-    extras: [EXTRA_OFICIAL],
-    prefixo: "[✵✵✧]"
+    extras: [],
+    prefixo: "[✹✹]"
   },
   "Coronel": {
     principal: "1483562466301579339",
-    extras: [EXTRA_OFICIAL],
-    prefixo: "[✵✵✵]"
+    extras: [],
+    prefixo: "[✹✹✹]"
   },
   "Comandante Geral": {
     principal: "1483562466309837047",
-    extras: [EXTRA_OFICIAL],
-    prefixo: "[☫∗⁑]"
+    extras: [],
+    prefixo: "[✪✪✪]"
   }
 };
 
@@ -109,7 +114,7 @@ function criarSelectCargo(userId, selecionado = null) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`cargo_${userId}`)
-      .setPlaceholder("Selecione o cargo")
+      .setPlaceholder("Selecione o cargo para aprovação")
       .addOptions(
         Object.keys(CARGOS).map((nome) => ({
           label: nome,
@@ -133,10 +138,11 @@ function criarBotoesAprovacao(userId, cargoSelecionado = "nenhum") {
   );
 }
 
-async function criarOuAtualizarPainel() {
-  const canal = await client.channels.fetch(CANAL_PORTARIA).catch(() => null);
+client.once(Events.ClientReady, async () => {
+  console.log(`🔥 Bot online: ${client.user.tag}`);
 
-  if (!canal) {
+  const canalPortaria = await client.channels.fetch(CANAL_PORTARIA).catch(() => null);
+  if (!canalPortaria) {
     console.log("❌ Canal da portaria não encontrado.");
     return;
   }
@@ -144,12 +150,12 @@ async function criarOuAtualizarPainel() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("abrir_form")
-      .setLabel("📋 Preencher")
+      .setLabel("Preencher")
       .setStyle(ButtonStyle.Primary)
   );
 
-  const embed = new EmbedBuilder()
-    .setColor(0xb30000)
+  const embedPainel = new EmbedBuilder()
+    .setColor(0xcc0000)
     .setTitle("🚒 Sistema de Ingresso - Corpo de Bombeiros Militar")
     .setDescription(
       "**Você foi aprovado na entrevista, parabéns!**\n\n" +
@@ -158,38 +164,25 @@ async function criarOuAtualizarPainel() {
     .setImage(IMAGEM_PAINEL)
     .setFooter({ text: "18º Grupamento do Corpo de Bombeiros Militar" });
 
+  const payload = {
+    embeds: [embedPainel],
+    components: [row]
+  };
+
   try {
-    const mensagens = await canal.messages.fetch({ limit: 20 }).catch(() => null);
-
-    const existente = mensagens?.find(
-      (m) =>
-        m.author.id === client.user.id &&
-        m.embeds?.[0]?.title === "🚒 Sistema de Ingresso - Corpo de Bombeiros Militar"
-    );
-
-    if (existente) {
-      await existente.edit({
-        embeds: [embed],
-        components: [row]
-      });
-      await existente.pin().catch(() => {});
-      console.log("✅ Painel atualizado.");
+    if (MENSAGEM_PAINEL) {
+      const msg = await canalPortaria.messages.fetch(MENSAGEM_PAINEL);
+      await msg.edit(payload);
+      console.log("✅ Painel fixo atualizado.");
     } else {
-      const msg = await canal.send({
-        embeds: [embed],
-        components: [row]
-      });
-      await msg.pin().catch(() => {});
+      const nova = await canalPortaria.send(payload);
+      await nova.pin().catch(() => {});
       console.log("📌 Painel criado e fixado.");
+      console.log("👉 ID DA MENSAGEM DO PAINEL:", nova.id);
     }
   } catch (err) {
-    console.log("❌ Erro ao criar painel:", err.message);
+    console.log("❌ Erro ao criar/atualizar painel:", err.message);
   }
-}
-
-client.once(Events.ClientReady, async () => {
-  console.log(`🔥 Bot online: ${client.user.tag}`);
-  await criarOuAtualizarPainel();
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -245,7 +238,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const unidade = interaction.fields.getTextInputValue("unidade");
 
       const canalAprovacao = await interaction.guild.channels.fetch(CANAL_APROVACAO).catch(() => null);
-
       if (!canalAprovacao) {
         await interaction.reply({
           content: "❌ Canal de aprovação não encontrado. Verifique o ID.",
@@ -280,6 +272,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: "✅ Solicitação enviada com sucesso.",
         ephemeral: true
       });
+
       return;
     }
 
@@ -353,16 +346,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const prefixo = configCargo.prefixo || "[CBM]";
-      const nomeBase = membro.displayName.replace(/^\[.*?\]\s*/, "").trim();
+      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch(() => {});
 
-      await membro.setNickname(`${prefixo} ${nomeBase}`).catch(() => {});
+      const nomesExtras = (configCargo.extras || []).length > 0 ? " + cargos extras" : "";
 
       const embedAprovado = new EmbedBuilder()
         .setColor(0x00b300)
         .setTitle("✅ Solicitação Aprovada")
         .setDescription(
           `**Militar:** ${membro}\n` +
-          `**Cargo aplicado:** ${cargoNome}\n` +
+          `**Cargo aplicado:** ${cargoNome}${nomesExtras}\n` +
           `**Prefixo definido:** ${prefixo}\n` +
           `**Aprovado por:** ${interaction.user}\n` +
           `**Status:** ATIVO`
