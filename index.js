@@ -23,15 +23,11 @@ const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
-// primeira vez deixa vazio; depois cole o id da mensagem criada
-let MENSAGEM_PAINEL = "";
+// depois da primeira execução, cole aqui o ID que aparece no log
+let MENSAGEM_PAINEL = "1488221045500851513";
 
 const IMAGEM_PAINEL = "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
-// cada cargo pode ter:
-// principal = cargo principal
-// extras = cargos adicionais
-// prefixo = prefixo do nick em símbolo
 const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
@@ -334,19 +330,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
       for (const cargoId of cargosParaAdicionar) {
         const cargo = interaction.guild.roles.cache.get(cargoId);
         if (cargo) {
-          await membro.roles.add(cargo).catch(() => {});
+          await membro.roles.add(cargo).catch((err) => {
+            console.log("Erro ao adicionar cargo:", err.message);
+          });
         }
       }
 
       if (CARGO_AGUARDANDO) {
         const aguardando = interaction.guild.roles.cache.get(CARGO_AGUARDANDO);
         if (aguardando && membro.roles.cache.has(CARGO_AGUARDANDO)) {
-          await membro.roles.remove(aguardando).catch(() => {});
+          await membro.roles.remove(aguardando).catch((err) => {
+            console.log("Erro ao remover cargo aguardando:", err.message);
+          });
         }
       }
 
       const prefixo = configCargo.prefixo || "[CBM]";
-      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch(() => {});
+
+      try {
+        const baseNome =
+          membro.nickname ||
+          membro.displayName ||
+          membro.user.globalName ||
+          membro.user.username;
+
+        const nomeSemPrefixo = baseNome.replace(/^\[[^\]]+\]\s*/, "").trim();
+        const novoNick = `${prefixo} ${nomeSemPrefixo}`.slice(0, 32);
+
+        await membro.setNickname(novoNick);
+        console.log("Nick alterado para:", novoNick);
+      } catch (err) {
+        console.log("Erro ao mudar nick:", err.message);
+      }
 
       const nomesExtras = (configCargo.extras || []).length > 0 ? " + cargos extras" : "";
 
