@@ -36,77 +36,77 @@ const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
     extras: [],
-    prefixo: "[•]"
+    prefixo: "[❯²]"
   },
   "Soldado 1ºCL": {
     principal: "1483562466276282517",
     extras: [],
-    prefixo: "[••]"
+    prefixo: " [❯¹]"
   },
   "Cabo": {
     principal: "1483562466276282518",
     extras: [],
-    prefixo: "[•••]"
+    prefixo: "[❯❯]"
   },
   "3º Sargento": {
     principal: "1483562466289127606",
     extras: [],
-    prefixo: "[✦]"
+    prefixo: "[❯❯❯]"
   },
   "2º Sargento": {
     principal: "1483562466289127607",
     extras: [],
-    prefixo: "[✦✦]"
+    prefixo: "[❯ ❯❯❯]"
   },
   "1º Sargento": {
     principal: "1483562466289127608",
     extras: [],
-    prefixo: "[✦✦✦]"
+    prefixo: "[❯❯ ❯❯❯]"
   },
   "Subtenente": {
     principal: "1483562466289127609",
     extras: [],
-    prefixo: "[✶]"
+    prefixo: "[△]"
   },
   "Aspirante a Oficial": {
     principal: "1483562466289127611",
     extras: [],
-    prefixo: "[✶✶]"
+    prefixo: " [✯]"
   },
   "2º Tenente": {
     principal: "1483562466289127613",
     extras: [],
-    prefixo: "[✶✶✶]"
+    prefixo: "[✧]"
   },
   "1º Tenente": {
     principal: "1483562466289127614",
     extras: [],
-    prefixo: "[✷✷]"
+    prefixo: "[✧✧]"
   },
   "Capitão": {
     principal: "1483562466301579335",
     extras: [],
-    prefixo: "[✷✷✷]"
+    prefixo: "[✧✧✧]"
   },
   "Major": {
     principal: "1483562466301579337",
     extras: [],
-    prefixo: "[✹]"
+    prefixo: "[✵✧✧]"
   },
   "Tenente-Coronel": {
     principal: "1483562466301579338",
     extras: [],
-    prefixo: "[✹✹]"
+    prefixo: "[✵✵✧]"
   },
   "Coronel": {
     principal: "1483562466301579339",
     extras: [],
-    prefixo: "[✹✹✹]"
+    prefixo: "[✵✵✵]"
   },
   "Comandante Geral": {
     principal: "1483562466309837047",
     extras: [],
-    prefixo: "[✪✪✪]"
+    prefixo: "[☫ ∗⁑]"
   }
 };
 
