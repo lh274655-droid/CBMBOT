@@ -23,15 +23,11 @@ const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
-// primeira vez deixa vazio; depois cole o id da mensagem criada
+// Depois que o bot criar o primeiro painel, copie o ID do console e cole aqui
 let MENSAGEM_PAINEL = "";
 
 const IMAGEM_PAINEL = "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
-// cada cargo pode ter:
-// principal = cargo principal
-// extras = cargos adicionais
-// prefixo = prefixo do nick em símbolo
 const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
@@ -138,6 +134,45 @@ function criarBotoesAprovacao(userId, cargoSelecionado = "nenhum") {
   );
 }
 
+async function buscarOuCriarPainel(canalPortaria, payload) {
+  let mensagemPainel = null;
+
+  if (MENSAGEM_PAINEL && MENSAGEM_PAINEL.trim() !== "") {
+    mensagemPainel = await canalPortaria.messages.fetch(MENSAGEM_PAINEL).catch(() => null);
+  }
+
+  if (!mensagemPainel) {
+    const mensagens = await canalPortaria.messages.fetch({ limit: 30 }).catch(() => null);
+
+    if (mensagens) {
+      mensagemPainel = mensagens.find((msg) =>
+        msg.author.id === client.user.id &&
+        msg.embeds &&
+        msg.embeds.length > 0 &&
+        msg.embeds[0].title === "🚒 Sistema de Ingresso - Corpo de Bombeiros Militar"
+      );
+    }
+  }
+
+  if (mensagemPainel) {
+    await mensagemPainel.edit(payload).catch(() => {});
+    await mensagemPainel.pin().catch(() => {});
+    MENSAGEM_PAINEL = mensagemPainel.id;
+    console.log("✅ Painel existente encontrado e atualizado.");
+    console.log("👉 ID DO PAINEL:", mensagemPainel.id);
+    return mensagemPainel;
+  }
+
+  const nova = await canalPortaria.send(payload);
+  await nova.pin().catch(() => {});
+  MENSAGEM_PAINEL = nova.id;
+
+  console.log("📌 Painel criado e fixado.");
+  console.log("👉 ID DA MENSAGEM DO PAINEL:", nova.id);
+
+  return nova;
+}
+
 client.once(Events.ClientReady, async () => {
   console.log(`🔥 Bot online: ${client.user.tag}`);
 
@@ -170,16 +205,7 @@ client.once(Events.ClientReady, async () => {
   };
 
   try {
-    if (MENSAGEM_PAINEL) {
-      const msg = await canalPortaria.messages.fetch(MENSAGEM_PAINEL);
-      await msg.edit(payload);
-      console.log("✅ Painel fixo atualizado.");
-    } else {
-      const nova = await canalPortaria.send(payload);
-      await nova.pin().catch(() => {});
-      console.log("📌 Painel criado e fixado.");
-      console.log("👉 ID DA MENSAGEM DO PAINEL:", nova.id);
-    }
+    await buscarOuCriarPainel(canalPortaria, payload);
   } catch (err) {
     console.log("❌ Erro ao criar/atualizar painel:", err.message);
   }
@@ -295,6 +321,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: `✅ Selecionado: **${cargoEscolhido}**`,
         ephemeral: true
       }).catch(() => {});
+
       return;
     }
 
@@ -332,9 +359,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const cargosParaAdicionar = [configCargo.principal, ...(configCargo.extras || [])];
 
       for (const cargoId of cargosParaAdicionar) {
-        const cargo = interaction.guild.roles.cache.get(cargoId);
-        if (cargo) {
-          await membro.roles.add(cargo).catch(() => {});
+        const cargoObj = interaction.guild.roles.cache.get(cargoId);
+        if (cargoObj) {
+          await membro.roles.add(cargoObj).catch(() => {});
         }
       }
 
