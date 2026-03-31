@@ -10,7 +10,7 @@ const {
   EmbedBuilder,
   StringSelectMenuBuilder,
   Events
-} = require('discord.js');
+} = require("discord.js");
 
 const client = new Client({
   intents: [
@@ -23,15 +23,13 @@ const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
-// primeira vez deixa vazio; depois cole o id da mensagem criada
+// se quiser fixar uma mensagem específica, coloque o ID aqui.
+// se deixar vazio, o bot cria uma e passa a reutilizar enquanto estiver ligado.
 let MENSAGEM_PAINEL = "";
 
-const IMAGEM_PAINEL = "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
+const IMAGEM_PAINEL =
+  "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
-// cada cargo pode ter:
-// principal = cargo principal
-// extras = cargos adicionais
-// prefixo = prefixo do nick em símbolo
 const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
@@ -110,6 +108,21 @@ const CARGOS = {
   }
 };
 
+function validarEnv() {
+  const faltando = [];
+
+  if (!process.env.TOKEN) faltando.push("TOKEN");
+  if (!CANAL_PORTARIA) faltando.push("CANAL_PORTARIA");
+  if (!CANAL_APROVACAO) faltando.push("CANAL_APROVACAO");
+
+  if (faltando.length) {
+    console.error("❌ Variáveis ausentes:", faltando.join(", "));
+    return false;
+  }
+
+  return true;
+}
+
 function criarSelectCargo(userId, selecionado = null) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -138,15 +151,7 @@ function criarBotoesAprovacao(userId, cargoSelecionado = "nenhum") {
   );
 }
 
-client.once(Events.ClientReady, async () => {
-  console.log(`🔥 Bot online: ${client.user.tag}`);
-
-  const canalPortaria = await client.channels.fetch(CANAL_PORTARIA).catch(() => null);
-  if (!canalPortaria) {
-    console.log("❌ Canal da portaria não encontrado.");
-    return;
-  }
-
+function montarPayloadPainel() {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("abrir_form")
@@ -164,25 +169,73 @@ client.once(Events.ClientReady, async () => {
     .setImage(IMAGEM_PAINEL)
     .setFooter({ text: "18º Grupamento do Corpo de Bombeiros Militar" });
 
-  const payload = {
+  return {
     embeds: [embedPainel],
     components: [row]
   };
+}
 
+async function garantirPainel() {
   try {
-    if (MENSAGEM_PAINEL) {
-      const msg = await canalPortaria.messages.fetch(MENSAGEM_PAINEL);
-      await msg.edit(payload);
-      console.log("✅ Painel fixo atualizado.");
-    } else {
-      const nova = await canalPortaria.send(payload);
-      await nova.pin().catch(() => {});
-      console.log("📌 Painel criado e fixado.");
-      console.log("👉 ID DA MENSAGEM DO PAINEL:", nova.id);
+    const canalPortaria = await client.channels.fetch(CANAL_PORTARIA).catch(() => null);
+    if (!canalPortaria) {
+      console.log("❌ Canal da portaria não encontrado.");
+      return;
     }
+
+    const payload = montarPayloadPainel();
+
+    // 1) se já tiver ID salvo, tenta editar
+    if (MENSAGEM_PAINEL) {
+      const msg = await canalPortaria.messages.fetch(MENSAGEM_PAINEL).catch(() => null);
+
+      if (msg) {
+        await msg.edit(payload).catch(() => {});
+        console.log("✅ Painel atualizado pelo ID salvo.");
+        return;
+      } else {
+        console.log("⚠️ Mensagem do painel não encontrada pelo ID salvo. Vou recriar.");
+      }
+    }
+
+    // 2) tenta achar um painel do próprio bot nas últimas mensagens
+    const mensagens = await canalPortaria.messages.fetch({ limit: 20 }).catch(() => null);
+    if (mensagens) {
+      const antiga = mensagens.find((m) =>
+        m.author?.id === client.user.id &&
+        m.embeds?.[0]?.title === "🚒 Sistema de Ingresso - Corpo de Bombeiros Militar"
+      );
+
+      if (antiga) {
+        await antiga.edit(payload).catch(() => {});
+        MENSAGEM_PAINEL = antiga.id;
+        console.log("✅ Painel antigo encontrado e atualizado.");
+        console.log("👉 ID DO PAINEL:", MENSAGEM_PAINEL);
+        return;
+      }
+    }
+
+    // 3) se não achar, cria novo
+    const nova = await canalPortaria.send(payload);
+    await nova.pin().catch(() => {});
+    MENSAGEM_PAINEL = nova.id;
+
+    console.log("📌 Novo painel criado e fixado.");
+    console.log("👉 ID DA MENSAGEM DO PAINEL:", MENSAGEM_PAINEL);
   } catch (err) {
-    console.log("❌ Erro ao criar/atualizar painel:", err.message);
+    console.log("❌ Erro ao garantir painel:", err.message);
   }
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`🔥 Bot online: ${client.user.tag}`);
+
+  await garantirPainel();
+
+  // verifica a cada 5 minutos se o painel ainda existe / precisa atualizar
+  setInterval(async () => {
+    await garantirPainel();
+  }, 5 * 60 * 1000);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -334,7 +387,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       for (const cargoId of cargosParaAdicionar) {
         const cargo = interaction.guild.roles.cache.get(cargoId);
         if (cargo) {
-          await membro.roles.add(cargo).catch(() => {});
+          await membro.roles.add(cargo).catch((err) => {
+            console.log(`⚠️ Não foi possível adicionar cargo ${cargoId}:`, err.message);
+          });
         }
       }
 
@@ -346,7 +401,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const prefixo = configCargo.prefixo || "[CBM]";
-      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch(() => {});
+      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch((err) => {
+        console.log("⚠️ Não consegui alterar apelido:", err.message);
+      });
 
       const nomesExtras = (configCargo.extras || []).length > 0 ? " + cargos extras" : "";
 
@@ -410,5 +467,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 });
+
+// proteção extra contra quedas
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ UNHANDLED REJECTION:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("❌ UNCAUGHT EXCEPTION:", error);
+});
+
+client.on("error", (error) => {
+  console.error("❌ CLIENT ERROR:", error);
+});
+
+client.on("warn", (info) => {
+  console.warn("⚠️ WARN:", info);
+});
+
+if (!validarEnv()) {
+  process.exit(1);
+}
 
 client.login(process.env.TOKEN);
