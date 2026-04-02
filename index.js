@@ -23,9 +23,10 @@ const client = new Client({
 const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
+const CARGO_REMOVER = "1483562465823559696";
 
-// Se quiser travar num painel específico, coloca o ID aqui.
-// Se deixar vazio, o bot localiza/cria automaticamente.
+// Se quiser fixar uma mensagem específica, coloque o ID aqui.
+// Se deixar vazio, o bot cria e reutiliza automaticamente.
 let MENSAGEM_PAINEL = "";
 
 const IMAGEM_PAINEL =
@@ -403,6 +404,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
 
+      if (membro.roles.cache.has(CARGO_REMOVER)) {
+        await membro.roles.remove(CARGO_REMOVER).catch(() => {});
+      }
+
       const embedAtual = interaction.message.embeds?.[0];
       const descricao = embedAtual?.data?.description || embedAtual?.description || "";
 
@@ -410,8 +415,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         extrairCampo(descricao, "Nome/QRA") ||
         membro.user.username;
 
+      const idFormulario =
+        extrairCampo(descricao, "ID") ||
+        "0000";
+
       const prefixo = configCargo.prefixo || "[CBM]";
-      const apelidoFinal = `${prefixo} ${nomeFormulario}`.slice(0, 32);
+      let apelidoFinal = `${prefixo} ${nomeFormulario} | ${idFormulario}`;
+      apelidoFinal = apelidoFinal.slice(0, 32);
 
       await membro.setNickname(apelidoFinal).catch((err) => {
         console.log("⚠️ Não consegui alterar apelido:", err.message);
@@ -427,6 +437,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           `**Cargo aplicado:** ${cargoNome}${nomesExtras}\n` +
           `**Prefixo definido:** ${prefixo}\n` +
           `**Nome aplicado:** ${nomeFormulario}\n` +
+          `**ID aplicado:** ${idFormulario}\n` +
           `**Apelido final:** ${apelidoFinal}\n` +
           `**Aprovado por:** ${interaction.user}\n` +
           `**Status:** ATIVO`
