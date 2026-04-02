@@ -24,8 +24,8 @@ const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 
-// se quiser fixar uma mensagem específica, coloque o ID aqui.
-// se deixar vazio, o bot cria uma e passa a reutilizar enquanto estiver ligado.
+// Se quiser travar num painel específico, coloca o ID aqui.
+// Se deixar vazio, o bot localiza/cria automaticamente.
 let MENSAGEM_PAINEL = "";
 
 const IMAGEM_PAINEL =
@@ -34,77 +34,77 @@ const IMAGEM_PAINEL =
 const CARGOS = {
   "Soldado 2ºCL": {
     principal: "1487872436975173704",
-    extras: [],
-    prefixo: "[•]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯²]"
   },
   "Soldado 1ºCL": {
     principal: "1483562466276282517",
-    extras: [],
-    prefixo: "[••]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯¹]"
   },
   "Cabo": {
     principal: "1483562466276282518",
-    extras: [],
-    prefixo: "[•••]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯❯]"
   },
   "3º Sargento": {
     principal: "1483562466289127606",
-    extras: [],
-    prefixo: "[✦]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯❯❯]"
   },
   "2º Sargento": {
     principal: "1483562466289127607",
-    extras: [],
-    prefixo: "[✦✦]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯ ❯❯❯]"
   },
   "1º Sargento": {
     principal: "1483562466289127608",
-    extras: [],
-    prefixo: "[✦✦✦]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[❯❯ ❯❯❯]"
   },
   "Subtenente": {
     principal: "1483562466289127609",
-    extras: [],
-    prefixo: "[✶]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[△]"
   },
   "Aspirante a Oficial": {
     principal: "1483562466289127611",
-    extras: [],
-    prefixo: "[✶✶]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✯]"
   },
   "2º Tenente": {
     principal: "1483562466289127613",
-    extras: [],
-    prefixo: "[✶✶✶]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✧]"
   },
   "1º Tenente": {
     principal: "1483562466289127614",
-    extras: [],
-    prefixo: "[✷✷]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✧✧]"
   },
   "Capitão": {
     principal: "1483562466301579335",
-    extras: [],
-    prefixo: "[✷✷✷]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✧✧✧]"
   },
   "Major": {
     principal: "1483562466301579337",
-    extras: [],
-    prefixo: "[✹]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✵✧✧]"
   },
   "Tenente-Coronel": {
     principal: "1483562466301579338",
-    extras: [],
-    prefixo: "[✹✹]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✵✵✧]"
   },
   "Coronel": {
     principal: "1483562466301579339",
-    extras: [],
-    prefixo: "[✹✹✹]"
+    extras: ["1483562466276282510", "1483562466276282512"],
+    prefixo: "[✵✵✵]"
   },
   "Comandante Geral": {
     principal: "1483562466309837047",
-    extras: [],
+    extras: ["1483562466276282510", "1483562466276282512"],
     prefixo: "[✪✪✪]"
   }
 };
@@ -225,6 +225,12 @@ async function garantirPainel() {
   }
 }
 
+function extrairCampo(descricao, rotulo) {
+  const regex = new RegExp(`\\*\\*${rotulo}:\\*\\*\\s*(.+)`);
+  const match = descricao.match(regex);
+  return match ? match[1].trim() : null;
+}
+
 client.once(Events.ClientReady, async () => {
   console.log(`🔥 Bot online: ${client.user.tag}`);
 
@@ -244,8 +250,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const qraInput = new TextInputBuilder()
         .setCustomId("qra")
-        .setLabel("QRA")
-        .setPlaceholder("Seu QRA")
+        .setLabel("Nome / QRA")
+        .setPlaceholder("Ex: Luiz Henrique")
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
@@ -397,8 +403,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
 
+      const embedAtual = interaction.message.embeds?.[0];
+      const descricao = embedAtual?.data?.description || embedAtual?.description || "";
+
+      const nomeFormulario =
+        extrairCampo(descricao, "Nome/QRA") ||
+        membro.user.username;
+
       const prefixo = configCargo.prefixo || "[CBM]";
-      await membro.setNickname(`${prefixo} ${membro.user.username}`).catch((err) => {
+      const apelidoFinal = `${prefixo} ${nomeFormulario}`.slice(0, 32);
+
+      await membro.setNickname(apelidoFinal).catch((err) => {
         console.log("⚠️ Não consegui alterar apelido:", err.message);
       });
 
@@ -411,6 +426,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           `**Militar:** ${membro}\n` +
           `**Cargo aplicado:** ${cargoNome}${nomesExtras}\n` +
           `**Prefixo definido:** ${prefixo}\n` +
+          `**Nome aplicado:** ${nomeFormulario}\n` +
+          `**Apelido final:** ${apelidoFinal}\n` +
           `**Aprovado por:** ${interaction.user}\n` +
           `**Status:** ATIVO`
         )
@@ -487,7 +504,7 @@ if (!validarEnv()) {
 
 client.login(process.env.TOKEN);
 
-// servidor web pro Render
+// Servidor web pro Render/UptimeRobot
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
