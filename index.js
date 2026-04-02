@@ -31,7 +31,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
 const CARGO_REMOVER = "1483562465823559696";
-
 let MENSAGEM_PAINEL = "";
 
 const IMAGEM_PAINEL =
@@ -198,19 +197,7 @@ async function registrarComandos() {
     const comandos = [
       new SlashCommandBuilder()
         .setName("anuncio")
-        .setDescription("Enviar um anúncio em embed")
-        .addStringOption(option =>
-          option.setName("titulo").setDescription("Título do anúncio").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("mensagem").setDescription("Mensagem do anúncio").setRequired(true)
-        )
-        .addChannelOption(option =>
-          option.setName("canal").setDescription("Canal onde será enviado").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
-        )
+        .setDescription("Abrir painel de anúncio")
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
       new SlashCommandBuilder()
@@ -425,38 +412,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return;
         }
 
-        const titulo = interaction.options.getString("titulo");
-        const mensagemBruta = interaction.options.getString("mensagem");
-        const canal = interaction.options.getChannel("canal");
-        const imagem = interaction.options.getString("imagem");
+        const modal = new ModalBuilder()
+          .setCustomId("modal_anuncio")
+          .setTitle("Criar Anúncio");
 
-        if (!canal || !canal.isTextBased()) {
-          await interaction.reply({
-            content: "❌ Canal inválido.",
-            ephemeral: true
-          });
-          return;
-        }
+        const tituloInput = new TextInputBuilder()
+          .setCustomId("titulo")
+          .setLabel("Título do anúncio")
+          .setPlaceholder("Ex: Operação Fênix")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
 
-        const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+        const mensagemInput = new TextInputBuilder()
+          .setCustomId("mensagem")
+          .setLabel("Mensagem")
+          .setPlaceholder("Use \\n para quebrar linha")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
 
-        const embed = new EmbedBuilder()
-          .setColor(0xcc0000)
-          .setTitle(`🚒 ${titulo.toUpperCase()}`)
-          .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`)
-          .setFooter({ text: `CBM • Anúncio enviado por ${interaction.user.username}` })
-          .setTimestamp();
+        const canalInput = new TextInputBuilder()
+          .setCustomId("canal")
+          .setLabel("ID do canal")
+          .setPlaceholder("Cole o ID do canal")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
 
-        if (imagem && imagem.startsWith("http")) {
-          embed.setImage(imagem);
-        }
+        const imagemInput = new TextInputBuilder()
+          .setCustomId("imagem")
+          .setLabel("Link da imagem (opcional)")
+          .setPlaceholder("https://...")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
 
-        await canal.send({ embeds: [embed] });
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(tituloInput),
+          new ActionRowBuilder().addComponents(mensagemInput),
+          new ActionRowBuilder().addComponents(canalInput),
+          new ActionRowBuilder().addComponents(imagemInput)
+        );
 
-        await interaction.reply({
-          content: `✅ Anúncio enviado em ${canal}.`,
-          ephemeral: true
-        });
+        await interaction.showModal(modal);
         return;
       }
 
@@ -488,7 +483,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const nomeBase = interaction.options.getString("nome") || nomeAtualLimpo || membro.user.username;
         const idBase = interaction.options.getString("id") || idAtualLimpo;
 
-        const { prefixo, apelidoFinal, configCargo } = await aplicarCargoENickname(
+        const { prefixo, apelidoFinal } = await aplicarCargoENickname(
           membro,
           cargoNome,
           nomeBase,
@@ -712,6 +707,52 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
 
       await interaction.showModal(modal);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === "modal_anuncio") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({
+          content: "❌ Você não tem permissão para usar este comando.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const titulo = interaction.fields.getTextInputValue("titulo");
+      const mensagemBruta = interaction.fields.getTextInputValue("mensagem");
+      const canalId = interaction.fields.getTextInputValue("canal");
+      const imagem = interaction.fields.getTextInputValue("imagem");
+
+      const canal = await interaction.guild.channels.fetch(canalId).catch(() => null);
+
+      if (!canal || !canal.isTextBased()) {
+        await interaction.reply({
+          content: "❌ Canal inválido. Verifique o ID do canal.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+
+      const embed = new EmbedBuilder()
+        .setColor(0xcc0000)
+        .setTitle(`🚒 ${titulo.toUpperCase()}`)
+        .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`)
+        .setFooter({ text: `CBM • Anúncio enviado por ${interaction.user.username}` })
+        .setTimestamp();
+
+      if (imagem && imagem.startsWith("http")) {
+        embed.setImage(imagem);
+      }
+
+      await canal.send({ embeds: [embed] });
+
+      await interaction.reply({
+        content: `✅ Anúncio enviado em ${canal}.`,
+        ephemeral: true
+      });
       return;
     }
 
