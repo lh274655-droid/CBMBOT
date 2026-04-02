@@ -9,7 +9,11 @@ const {
   TextInputStyle,
   EmbedBuilder,
   StringSelectMenuBuilder,
-  Events
+  Events,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionFlagsBits
 } = require("discord.js");
 const http = require("http");
 
@@ -23,10 +27,10 @@ const client = new Client({
 const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 const CARGO_REMOVER = "1483562465823559696";
 
-// Se quiser fixar uma mensagem específica, coloque o ID aqui.
-// Se deixar vazio, o bot cria e reutiliza automaticamente.
 let MENSAGEM_PAINEL = "";
 
 const IMAGEM_PAINEL =
@@ -116,6 +120,8 @@ function validarEnv() {
   if (!process.env.TOKEN) faltando.push("TOKEN");
   if (!CANAL_PORTARIA) faltando.push("CANAL_PORTARIA");
   if (!CANAL_APROVACAO) faltando.push("CANAL_APROVACAO");
+  if (!CLIENT_ID) faltando.push("CLIENT_ID");
+  if (!GUILD_ID) faltando.push("GUILD_ID");
 
   if (faltando.length) {
     console.error("❌ Variáveis ausentes:", faltando.join(", "));
@@ -123,6 +129,47 @@ function validarEnv() {
   }
 
   return true;
+}
+
+async function registrarComandos() {
+  try {
+    const comandos = [
+      new SlashCommandBuilder()
+        .setName("anuncio")
+        .setDescription("Enviar um anúncio em embed")
+        .addStringOption(option =>
+          option
+            .setName("titulo")
+            .setDescription("Título do anúncio")
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("mensagem")
+            .setDescription("Mensagem do anúncio")
+            .setRequired(true)
+        )
+        .addChannelOption(option =>
+          option
+            .setName("canal")
+            .setDescription("Canal onde será enviado")
+            .setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .toJSON()
+    ];
+
+    const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: comandos }
+    );
+
+    console.log("✅ Slash command /anuncio registrado.");
+  } catch (err) {
+    console.error("❌ Erro ao registrar comandos:", err);
+  }
 }
 
 function criarSelectCargo(userId, selecionado = null) {
@@ -194,8 +241,6 @@ async function garantirPainel() {
         await msg.edit(payload).catch(() => {});
         console.log("✅ Painel atualizado pelo ID salvo.");
         return;
-      } else {
-        console.log("⚠️ Mensagem do painel não encontrada pelo ID salvo. Vou recriar.");
       }
     }
 
@@ -235,6 +280,7 @@ function extrairCampo(descricao, rotulo) {
 client.once(Events.ClientReady, async () => {
   console.log(`🔥 Bot online: ${client.user.tag}`);
 
+  await registrarComandos();
   await garantirPainel();
 
   setInterval(async () => {
@@ -244,6 +290,43 @@ client.once(Events.ClientReady, async () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (interaction.isChatInputCommand() && interaction.commandName === "anuncio") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({
+          content: "❌ Você não tem permissão para usar este comando.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const titulo = interaction.options.getString("titulo");
+      const mensagem = interaction.options.getString("mensagem");
+      const canal = interaction.options.getChannel("canal");
+
+      if (!canal || !canal.isTextBased()) {
+        await interaction.reply({
+          content: "❌ Canal inválido.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0xcc0000)
+        .setTitle(`📢 ${titulo}`)
+        .setDescription(mensagem)
+        .setFooter({ text: `Anúncio enviado por ${interaction.user.username}` })
+        .setTimestamp();
+
+      await canal.send({ embeds: [embed] });
+
+      await interaction.reply({
+        content: `✅ Anúncio enviado em ${canal}.`,
+        ephemeral: true
+      });
+      return;
+    }
+
     if (interaction.isButton() && interaction.customId === "abrir_form") {
       const modal = new ModalBuilder()
         .setCustomId("form_ingresso_cbm")
@@ -515,7 +598,6 @@ if (!validarEnv()) {
 
 client.login(process.env.TOKEN);
 
-// Servidor web pro Render/UptimeRobot
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
