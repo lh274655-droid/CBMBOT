@@ -132,6 +132,67 @@ function validarEnv() {
   return true;
 }
 
+function extrairCampo(descricao, rotulo) {
+  const regex = new RegExp(`\\*\\*${rotulo}:\\*\\*\\s*(.+)`);
+  const match = descricao.match(regex);
+  return match ? match[1].trim() : null;
+}
+
+function getTodosCargosIds() {
+  const ids = [];
+  for (const cargo of Object.values(CARGOS)) {
+    ids.push(cargo.principal);
+    for (const extra of cargo.extras || []) {
+      if (!ids.includes(extra)) ids.push(extra);
+    }
+  }
+  return ids;
+}
+
+async function removerCargosDePatente(membro) {
+  for (const cargo of Object.values(CARGOS)) {
+    if (membro.roles.cache.has(cargo.principal)) {
+      await membro.roles.remove(cargo.principal).catch(() => {});
+    }
+  }
+}
+
+async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
+  const configCargo = CARGOS[cargoNome];
+  if (!configCargo) throw new Error(`Cargo inválido: ${cargoNome}`);
+
+  await removerCargosDePatente(membro);
+
+  const cargosParaAdicionar = [configCargo.principal, ...(configCargo.extras || [])];
+
+  for (const cargoId of cargosParaAdicionar) {
+    const cargo = membro.guild.roles.cache.get(cargoId);
+    if (cargo) {
+      await membro.roles.add(cargo).catch((err) => {
+        console.log(`⚠️ Não foi possível adicionar cargo ${cargoId}:`, err.message);
+      });
+    }
+  }
+
+  if (CARGO_AGUARDANDO && membro.roles.cache.has(CARGO_AGUARDANDO)) {
+    await membro.roles.remove(CARGO_AGUARDANDO).catch(() => {});
+  }
+
+  if (membro.roles.cache.has(CARGO_REMOVER)) {
+    await membro.roles.remove(CARGO_REMOVER).catch(() => {});
+  }
+
+  const prefixo = configCargo.prefixo || "[CBM]";
+  let apelidoFinal = `${prefixo} ${nomeBase} | ${idBase}`;
+  apelidoFinal = apelidoFinal.slice(0, 32);
+
+  await membro.setNickname(apelidoFinal).catch((err) => {
+    console.log("⚠️ Não consegui alterar apelido:", err.message);
+  });
+
+  return { prefixo, apelidoFinal, configCargo };
+}
+
 async function registrarComandos() {
   try {
     const comandos = [
@@ -139,32 +200,96 @@ async function registrarComandos() {
         .setName("anuncio")
         .setDescription("Enviar um anúncio em embed")
         .addStringOption(option =>
-          option
-            .setName("titulo")
-            .setDescription("Título do anúncio")
-            .setRequired(true)
+          option.setName("titulo").setDescription("Título do anúncio").setRequired(true)
         )
         .addStringOption(option =>
-          option
-            .setName("mensagem")
-            .setDescription("Mensagem do anúncio")
-            .setRequired(true)
+          option.setName("mensagem").setDescription("Mensagem do anúncio").setRequired(true)
         )
         .addChannelOption(option =>
-          option
-            .setName("canal")
-            .setDescription("Canal onde será enviado")
-            .setRequired(true)
+          option.setName("canal").setDescription("Canal onde será enviado").setRequired(true)
         )
         .addStringOption(option =>
-          option
-            .setName("imagem")
-            .setDescription("Link da imagem (opcional)")
-            .setRequired(false)
+          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("promover")
+        .setDescription("Promover um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName("cargo").setDescription("Novo cargo").setRequired(true)
+            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
+        )
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("id").setDescription("ID para o apelido").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("rebaixar")
+        .setDescription("Rebaixar um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName("cargo").setDescription("Cargo de destino").setRequired(true)
+            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
+        )
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("id").setDescription("ID para o apelido").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("demitir")
+        .setDescription("Demitir um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("ficha")
+        .setDescription("Ver ficha de um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("operacao")
+        .setDescription("Criar anúncio de operação")
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome da operação").setRequired(true)
+        )
+        .addChannelOption(option =>
+          option.setName("canal").setDescription("Canal do anúncio").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("alerta")
+        .setDescription("Enviar alerta rápido")
+        .addStringOption(option =>
+          option.setName("mensagem").setDescription("Mensagem do alerta").setRequired(true)
+        )
+        .addChannelOption(option =>
+          option.setName("canal").setDescription("Canal do alerta").setRequired(false)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .toJSON()
-    ];
+    ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
@@ -173,7 +298,7 @@ async function registrarComandos() {
       { body: comandos }
     );
 
-    console.log("✅ Slash command /anuncio registrado.");
+    console.log("✅ Slash commands registrados.");
   } catch (err) {
     console.error("❌ Erro ao registrar comandos:", err);
   }
@@ -243,7 +368,6 @@ async function garantirPainel() {
 
     if (MENSAGEM_PAINEL) {
       const msg = await canalPortaria.messages.fetch(MENSAGEM_PAINEL).catch(() => null);
-
       if (msg) {
         await msg.edit(payload).catch(() => {});
         console.log("✅ Painel atualizado pelo ID salvo.");
@@ -278,12 +402,6 @@ async function garantirPainel() {
   }
 }
 
-function extrairCampo(descricao, rotulo) {
-  const regex = new RegExp(`\\*\\*${rotulo}:\\*\\*\\s*(.+)`);
-  const match = descricao.match(regex);
-  return match ? match[1].trim() : null;
-}
-
 client.once(Events.ClientReady, async () => {
   console.log(`🔥 Bot online: ${client.user.tag}`);
 
@@ -297,52 +415,260 @@ client.once(Events.ClientReady, async () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (interaction.isChatInputCommand() && interaction.commandName === "anuncio") {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "anuncio") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão para usar este comando.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const titulo = interaction.options.getString("titulo");
+        const mensagemBruta = interaction.options.getString("mensagem");
+        const canal = interaction.options.getChannel("canal");
+        const imagem = interaction.options.getString("imagem");
+
+        if (!canal || !canal.isTextBased()) {
+          await interaction.reply({
+            content: "❌ Canal inválido.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+
+        const embed = new EmbedBuilder()
+          .setColor(0xcc0000)
+          .setTitle(`🚒 ${titulo.toUpperCase()}`)
+          .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`)
+          .setFooter({ text: `CBM • Anúncio enviado por ${interaction.user.username}` })
+          .setTimestamp();
+
+        if (imagem && imagem.startsWith("http")) {
+          embed.setImage(imagem);
+        }
+
+        await canal.send({ embeds: [embed] });
+
         await interaction.reply({
-          content: "❌ Você não tem permissão para usar este comando.",
+          content: `✅ Anúncio enviado em ${canal}.`,
           ephemeral: true
         });
         return;
       }
 
-      const titulo = interaction.options.getString("titulo");
-      const mensagemBruta = interaction.options.getString("mensagem");
-      const canal = interaction.options.getChannel("canal");
-      const imagem = interaction.options.getString("imagem");
+      if (interaction.commandName === "promover" || interaction.commandName === "rebaixar") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
 
-      if (!canal || !canal.isTextBased()) {
-        await interaction.reply({
-          content: "❌ Canal inválido.",
-          ephemeral: true
-        });
+        const membro = await interaction.guild.members.fetch(
+          interaction.options.getUser("membro").id
+        ).catch(() => null);
+
+        const cargoNome = interaction.options.getString("cargo");
+        if (!membro) {
+          await interaction.reply({ content: "❌ Membro não encontrado.", ephemeral: true });
+          return;
+        }
+
+        const partesNick = (membro.displayName || membro.user.username).split("|");
+        const nomeAtualLimpo = partesNick[0]
+          .replace(/^\[[^\]]+\]\s*/, "")
+          .trim();
+        const idAtualLimpo = partesNick[1]?.trim() || "0000";
+
+        const nomeBase = interaction.options.getString("nome") || nomeAtualLimpo || membro.user.username;
+        const idBase = interaction.options.getString("id") || idAtualLimpo;
+
+        const { prefixo, apelidoFinal, configCargo } = await aplicarCargoENickname(
+          membro,
+          cargoNome,
+          nomeBase,
+          idBase
+        );
+
+        const titulo = interaction.commandName === "promover" ? "✅ Militar Promovido" : "🔻 Militar Rebaixado";
+
+        const embed = new EmbedBuilder()
+          .setColor(interaction.commandName === "promover" ? 0x00b300 : 0xff9900)
+          .setTitle(titulo)
+          .setDescription(
+            `**Militar:** ${membro}\n` +
+            `**Novo cargo:** ${cargoNome}\n` +
+            `**Prefixo:** ${prefixo}\n` +
+            `**Nome:** ${nomeBase}\n` +
+            `**ID:** ${idBase}\n` +
+            `**Apelido final:** ${apelidoFinal}\n` +
+            `**Executado por:** ${interaction.user}`
+          )
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
         return;
       }
 
-      const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+      if (interaction.commandName === "demitir") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
 
-      const embed = new EmbedBuilder()
-        .setColor(0xcc0000)
-        .setTitle(`🚒 ${titulo.toUpperCase()}`)
-        .setDescription(
-          `━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`
-        )
-        .setFooter({
-          text: `CBM • Anúncio enviado por ${interaction.user.username}`
-        })
-        .setTimestamp();
+        const membro = await interaction.guild.members.fetch(
+          interaction.options.getUser("membro").id
+        ).catch(() => null);
 
-      if (imagem && imagem.startsWith("http")) {
-        embed.setImage(imagem);
+        if (!membro) {
+          await interaction.reply({ content: "❌ Membro não encontrado.", ephemeral: true });
+          return;
+        }
+
+        await removerCargosDePatente(membro);
+
+        const idsExtras = getTodosCargosIds().filter(id => id !== CARGO_REMOVER);
+        for (const cargoId of idsExtras) {
+          if (membro.roles.cache.has(cargoId)) {
+            await membro.roles.remove(cargoId).catch(() => {});
+          }
+        }
+
+        if (membro.roles.cache.has(CARGO_REMOVER)) {
+          await membro.roles.remove(CARGO_REMOVER).catch(() => {});
+        }
+
+        await membro.setNickname(null).catch(() => {});
+
+        const embed = new EmbedBuilder()
+          .setColor(0xcc0000)
+          .setTitle("❌ Militar Demitido")
+          .setDescription(
+            `**Militar:** ${membro}\n` +
+            `**Executado por:** ${interaction.user}\n` +
+            `**Status:** DESLIGADO`
+          )
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        return;
       }
 
-      await canal.send({ embeds: [embed] });
+      if (interaction.commandName === "ficha") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
 
-      await interaction.reply({
-        content: `✅ Anúncio enviado em ${canal}.`,
-        ephemeral: true
-      });
-      return;
+        const membro = await interaction.guild.members.fetch(
+          interaction.options.getUser("membro").id
+        ).catch(() => null);
+
+        if (!membro) {
+          await interaction.reply({ content: "❌ Membro não encontrado.", ephemeral: true });
+          return;
+        }
+
+        const cargosVisiveis = membro.roles.cache
+          .filter(r => r.id !== interaction.guild.id)
+          .map(r => r.name)
+          .reverse()
+          .join(", ") || "Nenhum";
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2b8cff)
+          .setTitle("🪪 Ficha Militar")
+          .setDescription(
+            `**Militar:** ${membro}\n` +
+            `**Apelido:** ${membro.displayName}\n` +
+            `**ID Discord:** ${membro.id}\n` +
+            `**Cargos:** ${cargosVisiveis}`
+          )
+          .setThumbnail(membro.user.displayAvatarURL())
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+
+      if (interaction.commandName === "operacao") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const nome = interaction.options.getString("nome");
+        const canal = interaction.options.getChannel("canal") || interaction.channel;
+        const imagem = interaction.options.getString("imagem");
+
+        if (!canal || !canal.isTextBased()) {
+          await interaction.reply({ content: "❌ Canal inválido.", ephemeral: true });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle("🚨 NOVA OPERAÇÃO")
+          .setDescription(
+            `━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `**${nome.toUpperCase()}**\n\n` +
+            `Todas as unidades deverão comparecer.\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━`
+          )
+          .setFooter({ text: `Operação criada por ${interaction.user.username}` })
+          .setTimestamp();
+
+        if (imagem && imagem.startsWith("http")) {
+          embed.setImage(imagem);
+        }
+
+        await canal.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Operação enviada em ${canal}.`, ephemeral: true });
+        return;
+      }
+
+      if (interaction.commandName === "alerta") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const msg = interaction.options.getString("mensagem").replace(/\\n/g, "\n");
+        const canal = interaction.options.getChannel("canal") || interaction.channel;
+
+        if (!canal || !canal.isTextBased()) {
+          await interaction.reply({ content: "❌ Canal inválido.", ephemeral: true });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0xff9900)
+          .setTitle("⚠️ ALERTA")
+          .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${msg}\n\n━━━━━━━━━━━━━━━━━━━━`)
+          .setFooter({ text: `Alerta enviado por ${interaction.user.username}` })
+          .setTimestamp();
+
+        await canal.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Alerta enviado em ${canal}.`, ephemeral: true });
+        return;
+      }
     }
 
     if (interaction.isButton() && interaction.customId === "abrir_form") {
@@ -469,15 +795,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      const configCargo = CARGOS[cargoNome];
-      if (!configCargo) {
-        await interaction.reply({
-          content: `❌ Cargo não encontrado: ${cargoNome}`,
-          ephemeral: true
-        });
-        return;
-      }
-
       const membro = await interaction.guild.members.fetch(userId).catch(() => null);
       if (!membro) {
         await interaction.reply({
@@ -487,46 +804,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      const cargosParaAdicionar = [configCargo.principal, ...(configCargo.extras || [])];
-
-      for (const cargoId of cargosParaAdicionar) {
-        const cargo = interaction.guild.roles.cache.get(cargoId);
-        if (cargo) {
-          await membro.roles.add(cargo).catch((err) => {
-            console.log(`⚠️ Não foi possível adicionar cargo ${cargoId}:`, err.message);
-          });
-        }
-      }
-
-      if (CARGO_AGUARDANDO) {
-        const aguardando = interaction.guild.roles.cache.get(CARGO_AGUARDANDO);
-        if (aguardando && membro.roles.cache.has(CARGO_AGUARDANDO)) {
-          await membro.roles.remove(aguardando).catch(() => {});
-        }
-      }
-
-      if (membro.roles.cache.has(CARGO_REMOVER)) {
-        await membro.roles.remove(CARGO_REMOVER).catch(() => {});
-      }
-
       const embedAtual = interaction.message.embeds?.[0];
       const descricao = embedAtual?.data?.description || embedAtual?.description || "";
 
-      const nomeFormulario =
-        extrairCampo(descricao, "Nome/QRA") ||
-        membro.user.username;
+      const nomeFormulario = extrairCampo(descricao, "Nome/QRA") || membro.user.username;
+      const idFormulario = extrairCampo(descricao, "ID") || "0000";
 
-      const idFormulario =
-        extrairCampo(descricao, "ID") ||
-        "0000";
-
-      const prefixo = configCargo.prefixo || "[CBM]";
-      let apelidoFinal = `${prefixo} ${nomeFormulario} | ${idFormulario}`;
-      apelidoFinal = apelidoFinal.slice(0, 32);
-
-      await membro.setNickname(apelidoFinal).catch((err) => {
-        console.log("⚠️ Não consegui alterar apelido:", err.message);
-      });
+      const { prefixo, apelidoFinal, configCargo } = await aplicarCargoENickname(
+        membro,
+        cargoNome,
+        nomeFormulario,
+        idFormulario
+      );
 
       const nomesExtras = (configCargo.extras || []).length > 0 ? " + cargos extras" : "";
 
