@@ -29,6 +29,7 @@ const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
+
 const CARGO_REMOVER = "1483562465823559696";
 
 let MENSAGEM_PAINEL = "";
@@ -154,6 +155,12 @@ async function registrarComandos() {
             .setName("canal")
             .setDescription("Canal onde será enviado")
             .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("imagem")
+            .setDescription("Link da imagem (opcional)")
+            .setRequired(false)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON()
@@ -300,8 +307,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const titulo = interaction.options.getString("titulo");
-      const mensagem = interaction.options.getString("mensagem");
+      const mensagemBruta = interaction.options.getString("mensagem");
       const canal = interaction.options.getChannel("canal");
+      const imagem = interaction.options.getString("imagem");
 
       if (!canal || !canal.isTextBased()) {
         await interaction.reply({
@@ -311,12 +319,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
+      const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+
       const embed = new EmbedBuilder()
         .setColor(0xcc0000)
-        .setTitle(`📢 ${titulo}`)
-        .setDescription(mensagem)
-        .setFooter({ text: `Anúncio enviado por ${interaction.user.username}` })
+        .setTitle(`🚒 ${titulo.toUpperCase()}`)
+        .setDescription(
+          `━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`
+        )
+        .setFooter({
+          text: `CBM • Anúncio enviado por ${interaction.user.username}`
+        })
         .setTimestamp();
+
+      if (imagem && imagem.startsWith("http")) {
+        embed.setImage(imagem);
+      }
 
       await canal.send({ embeds: [embed] });
 
