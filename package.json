@@ -1,7 +1,6 @@
 {
   "name": "cbm-bot",
   "version": "1.0.0",
-  "description": "Bot CBM RP com painel, promoções e sistema de aprovação",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
