@@ -32,6 +32,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const CARGO_REMOVER = "1483562465823559696";
 let MENSAGEM_PAINEL = "";
+const pontos = new Map();
 
 const IMAGEM_PAINEL =
   "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
@@ -192,6 +193,85 @@ async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
   return { prefixo, apelidoFinal, configCargo };
 }
 
+function formatarDuracao(ms) {
+  const totalSegundos = Math.floor(ms / 1000);
+  const horas = Math.floor(totalSegundos / 3600);
+  const minutos = Math.floor((totalSegundos % 3600) / 60);
+  const segundos = totalSegundos % 60;
+
+  const partes = [];
+  if (horas > 0) partes.push(`${horas}h`);
+  if (minutos > 0) partes.push(`${minutos}min`);
+  partes.push(`${segundos}s`);
+
+  return partes.join(", ");
+}
+
+function criarEmbedPonto(user, ponto, titulo = "📂 Bate-Ponto", cor = 0x2b8cff, finalizado = false) {
+  const agora = Date.now();
+
+  let tempoPausado = 0;
+  for (const pausa of ponto.pausas) {
+    tempoPausado += pausa.fim - pausa.inicio;
+  }
+  if (ponto.emPausa && ponto.pausaInicio) {
+    tempoPausado += agora - ponto.pausaInicio;
+  }
+
+  let tempoTrabalhado = (finalizado ? ponto.fim : agora) - ponto.inicio - tempoPausado;
+  if (tempoTrabalhado < 0) tempoTrabalhado = 0;
+
+  const linhas = [
+    `**Usuário:** ${user}`,
+    `**Início:** <t:${Math.floor(ponto.inicio / 1000)}:F>`
+  ];
+
+  if (ponto.pausaInicio) {
+    linhas.push(`**Pausa:** <t:${Math.floor(ponto.pausaInicio / 1000)}:F>`);
+  }
+
+  if (ponto.volta) {
+    linhas.push(`**Volta:** <t:${Math.floor(ponto.volta / 1000)}:F>`);
+  }
+
+  if (ponto.fim) {
+    linhas.push(`**Término:** <t:${Math.floor(ponto.fim / 1000)}:F>`);
+  }
+
+  linhas.push(`**Tempo total:** ${formatarDuracao(tempoTrabalhado)}`);
+  linhas.push(`**Status:** ${finalizado ? "FINALIZADO" : ponto.emPausa ? "EM PAUSA" : "EM SERVIÇO"}`);
+
+  return new EmbedBuilder()
+    .setColor(cor)
+    .setTitle(titulo)
+    .setDescription(linhas.join("\n"))
+    .setFooter({ text: "Sistema de ponto • CBM BOT" })
+    .setTimestamp();
+}
+
+function criarBotoesPonto(emPausa = false, finalizado = false) {
+  if (finalizado) return [];
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("ponto_pausar")
+        .setLabel("Pausar")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(emPausa),
+      new ButtonBuilder()
+        .setCustomId("ponto_voltar")
+        .setLabel("Voltar")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!emPausa),
+      new ButtonBuilder()
+        .setCustomId("ponto_finalizar")
+        .setLabel("Terminar")
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
+}
+
 async function registrarComandos() {
   try {
     const comandos = [
@@ -275,7 +355,11 @@ async function registrarComandos() {
         .addChannelOption(option =>
           option.setName("canal").setDescription("Canal do alerta").setRequired(false)
         )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("ponto")
+        .setDescription("Abrir seu ponto eletrônico")
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -664,6 +748,48 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply({ content: `✅ Alerta enviado em ${canal}.`, ephemeral: true });
         return;
       }
+
+      if (interaction.commandName === "ponto") {
+        const userId = interaction.user.id;
+
+        if (pontos.has(userId)) {
+          const pontoExistente = pontos.get(userId);
+
+          await interaction.reply({
+            embeds: [
+              criarEmbedPonto(
+                interaction.user,
+                pontoExistente,
+                "📂 Bate-Ponto",
+                pontoExistente.emPausa ? 0xff9900 : 0x00b300,
+                false
+              )
+            ],
+            components: criarBotoesPonto(pontoExistente.emPausa, false),
+            ephemeral: true
+          });
+          return;
+        }
+
+        const agora = Date.now();
+
+        const ponto = {
+          inicio: agora,
+          pausas: [],
+          emPausa: false,
+          pausaInicio: null,
+          volta: null,
+          fim: null
+        };
+
+        pontos.set(userId, ponto);
+
+        await interaction.reply({
+          embeds: [criarEmbedPonto(interaction.user, ponto, "📂 Bate-Ponto", 0x00b300, false)],
+          components: criarBotoesPonto(false, false)
+        });
+        return;
+      }
     }
 
     if (interaction.isButton() && interaction.customId === "abrir_form") {
@@ -708,6 +834,89 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       await interaction.showModal(modal);
       return;
+    }
+
+    if (interaction.isButton() && ["ponto_pausar", "ponto_voltar", "ponto_finalizar"].includes(interaction.customId)) {
+      const userId = interaction.user.id;
+      const ponto = pontos.get(userId);
+
+      if (!ponto) {
+        await interaction.reply({
+          content: "❌ Você não possui um ponto aberto.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (interaction.customId === "ponto_pausar") {
+        if (ponto.emPausa) {
+          await interaction.reply({
+            content: "⚠️ Seu ponto já está em pausa.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        ponto.emPausa = true;
+        ponto.pausaInicio = Date.now();
+
+        await interaction.update({
+          embeds: [criarEmbedPonto(interaction.user, ponto, "⏸️ Ponto Pausado", 0xff9900, false)],
+          components: criarBotoesPonto(true, false)
+        });
+        return;
+      }
+
+      if (interaction.customId === "ponto_voltar") {
+        if (!ponto.emPausa || !ponto.pausaInicio) {
+          await interaction.reply({
+            content: "⚠️ Seu ponto não está em pausa.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const agora = Date.now();
+
+        ponto.pausas.push({
+          inicio: ponto.pausaInicio,
+          fim: agora
+        });
+
+        ponto.emPausa = false;
+        ponto.volta = agora;
+        ponto.pausaInicio = null;
+
+        await interaction.update({
+          embeds: [criarEmbedPonto(interaction.user, ponto, "▶️ Ponto Reaberto", 0x00b300, false)],
+          components: criarBotoesPonto(false, false)
+        });
+        return;
+      }
+
+      if (interaction.customId === "ponto_finalizar") {
+        if (ponto.emPausa && ponto.pausaInicio) {
+          const agora = Date.now();
+          ponto.pausas.push({
+            inicio: ponto.pausaInicio,
+            fim: agora
+          });
+          ponto.emPausa = false;
+          ponto.pausaInicio = null;
+        }
+
+        ponto.fim = Date.now();
+
+        const embedFinal = criarEmbedPonto(interaction.user, ponto, "📁 Ponto Finalizado", 0xcc0000, true);
+
+        pontos.delete(userId);
+
+        await interaction.update({
+          embeds: [embedFinal],
+          components: []
+        });
+        return;
+      }
     }
 
     if (interaction.isModalSubmit() && interaction.customId === "modal_anuncio") {
