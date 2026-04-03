@@ -15,8 +15,11 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits
 } = require("discord.js");
+
+const OpenAI = require("openai");
 const http = require("http");
 
+// ===================== CLIENT =====================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -24,17 +27,21 @@ const client = new Client({
   ]
 });
 
-// ===================== VARIÁVEIS =====================
+// ===================== ENV =====================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
-
 const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
 const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
 const CANAL_PONTO = process.env.CANAL_PONTO;
-const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
+const OPENAI_KEY = process.env.OPENAI_KEY;
+const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO || "";
 
 const CARGO_REMOVER = "1483562465823559696";
+
+const openai = new OpenAI({
+  apiKey: OPENAI_KEY
+});
 
 // ===================== MEMÓRIA =====================
 let MENSAGEM_PAINEL = "";
@@ -122,7 +129,7 @@ const CARGOS = {
   }
 };
 
-// ===================== FUNÇÕES GERAIS =====================
+// ===================== VALIDAÇÃO =====================
 function validarEnv() {
   const faltando = [];
 
@@ -132,6 +139,7 @@ function validarEnv() {
   if (!CANAL_PORTARIA) faltando.push("CANAL_PORTARIA");
   if (!CANAL_APROVACAO) faltando.push("CANAL_APROVACAO");
   if (!CANAL_PONTO) faltando.push("CANAL_PONTO");
+  if (!OPENAI_KEY) faltando.push("OPENAI_KEY");
 
   if (faltando.length) {
     console.error("❌ Variáveis ausentes:", faltando.join(", "));
@@ -141,21 +149,29 @@ function validarEnv() {
   return true;
 }
 
+// ===================== UTILS =====================
 function extrairCampo(descricao, rotulo) {
   const regex = new RegExp(`\\*\\*${rotulo}:\\*\\*\\s*(.+)`);
   const match = descricao.match(regex);
   return match ? match[1].trim() : null;
 }
 
-function getTodosCargosIds() {
-  const ids = [];
-  for (const cargo of Object.values(CARGOS)) {
-    ids.push(cargo.principal);
-    for (const extra of cargo.extras || []) {
-      if (!ids.includes(extra)) ids.push(extra);
-    }
-  }
-  return ids;
+function limparPrefixoDoNick(nome) {
+  return nome.replace(/^\[[^\]]+\]\s*/, "").trim();
+}
+
+function formatarTempo(ms) {
+  const totalSegundos = Math.floor(ms / 1000);
+  const horas = Math.floor(totalSegundos / 3600);
+  const minutos = Math.floor((totalSegundos % 3600) / 60);
+  const segundos = totalSegundos % 60;
+
+  const partes = [];
+  if (horas > 0) partes.push(`${horas}h`);
+  if (minutos > 0) partes.push(`${minutos}m`);
+  partes.push(`${segundos}s`);
+
+  return partes.join(" ");
 }
 
 async function removerCargosDePatente(membro) {
@@ -166,11 +182,33 @@ async function removerCargosDePatente(membro) {
   }
 }
 
+async function removerCargosExtrasCBM(membro) {
+  const extras = new Set();
+  for (const cargo of Object.values(CARGOS)) {
+    for (const extra of cargo.extras || []) extras.add(extra);
+  }
+
+  for (const extraId of extras) {
+    if (membro.roles.cache.has(extraId)) {
+      await membro.roles.remove(extraId).catch(() => {});
+    }
+  }
+}
+
 async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
   const configCargo = CARGOS[cargoNome];
   if (!configCargo) throw new Error(`Cargo inválido: ${cargoNome}`);
 
   await removerCargosDePatente(membro);
+  await removerCargosExtrasCBM(membro);
+
+  if (membro.roles.cache.has(CARGO_REMOVER)) {
+    await membro.roles.remove(CARGO_REMOVER).catch(() => {});
+  }
+
+  if (CARGO_AGUARDANDO && membro.roles.cache.has(CARGO_AGUARDANDO)) {
+    await membro.roles.remove(CARGO_AGUARDANDO).catch(() => {});
+  }
 
   const cargosParaAdicionar = [configCargo.principal, ...(configCargo.extras || [])];
 
@@ -181,14 +219,6 @@ async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
         console.log(`⚠️ Não foi possível adicionar cargo ${cargoId}:`, err.message);
       });
     }
-  }
-
-  if (CARGO_AGUARDANDO && membro.roles.cache.has(CARGO_AGUARDANDO)) {
-    await membro.roles.remove(CARGO_AGUARDANDO).catch(() => {});
-  }
-
-  if (membro.roles.cache.has(CARGO_REMOVER)) {
-    await membro.roles.remove(CARGO_REMOVER).catch(() => {});
   }
 
   const prefixo = configCargo.prefixo || "[CBM]";
@@ -203,56 +233,61 @@ async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
 }
 
 // ===================== PONTO =====================
-function formatarTempo(ms) {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}h ${m}m ${sec}s`;
-}
-
-function criarEmbedPonto(user, ponto, finalizado = false) {
+function criarEmbedPonto(user, ponto, titulo = "📂 Bate-Ponto", cor = 0x00b300, finalizado = false) {
   const agora = Date.now();
 
-  let tempoPausa = 0;
-  for (const p of ponto.pausas) {
-    tempoPausa += p.fim - p.inicio;
+  let tempoPausado = 0;
+  for (const pausa of ponto.pausas) {
+    tempoPausado += pausa.fim - pausa.inicio;
   }
 
   if (ponto.emPausa && ponto.pausaInicio) {
-    tempoPausa += agora - ponto.pausaInicio;
+    tempoPausado += agora - ponto.pausaInicio;
   }
 
-  const baseFim = finalizado && ponto.fim ? ponto.fim : agora;
-  const tempoTotal = Math.max(0, baseFim - ponto.inicio - tempoPausa);
+  const fimBase = finalizado && ponto.fim ? ponto.fim : agora;
+  let tempoTotal = fimBase - ponto.inicio - tempoPausado;
+  if (tempoTotal < 0) tempoTotal = 0;
+
+  const linhas = [
+    `👤 **Usuário:** ${user}`,
+    `⏱️ **Início:** <t:${Math.floor(ponto.inicio / 1000)}:F>`
+  ];
+
+  if (ponto.pausaInicio && !finalizado && ponto.emPausa) {
+    linhas.push(`⏸️ **Pausa:** <t:${Math.floor(ponto.pausaInicio / 1000)}:F>`);
+  }
+
+  if (ponto.fim) {
+    linhas.push(`🏁 **Fim:** <t:${Math.floor(ponto.fim / 1000)}:F>`);
+  }
+
+  linhas.push(`📊 **Tempo total:** ${formatarTempo(tempoTotal)}`);
+  linhas.push(`📌 **Status:** ${finalizado ? "FINALIZADO" : ponto.emPausa ? "PAUSADO" : "EM SERVIÇO"}`);
 
   return new EmbedBuilder()
-    .setColor(finalizado ? 0xcc0000 : ponto.emPausa ? 0xff9900 : 0x00b300)
-    .setTitle(finalizado ? "📁 Ponto Finalizado" : "📂 Bate-Ponto")
-    .setDescription(
-      `👤 **Usuário:** ${user}\n` +
-      `⏱️ **Início:** <t:${Math.floor(ponto.inicio / 1000)}:F>\n` +
-      (ponto.fim ? `🏁 **Fim:** <t:${Math.floor(ponto.fim / 1000)}:F>\n` : "") +
-      `📊 **Tempo:** ${formatarTempo(tempoTotal)}\n` +
-      `📌 **Status:** ${finalizado ? "FINALIZADO" : ponto.emPausa ? "PAUSADO" : "EM SERVIÇO"}`
-    )
+    .setColor(cor)
+    .setTitle(titulo)
+    .setDescription(linhas.join("\n"))
     .setFooter({ text: "Sistema de ponto • CBM BOT" })
     .setTimestamp();
 }
 
-function botoesPonto(pausa) {
+function botoesPonto(pausado = false, finalizado = false) {
+  if (finalizado) return [];
+
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("pausar")
         .setLabel("Pausar")
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pausa),
+        .setDisabled(pausado),
       new ButtonBuilder()
         .setCustomId("voltar")
         .setLabel("Voltar")
         .setStyle(ButtonStyle.Success)
-        .setDisabled(!pausa),
+        .setDisabled(!pausado),
       new ButtonBuilder()
         .setCustomId("finalizar")
         .setLabel("Finalizar")
@@ -265,13 +300,16 @@ async function atualizarPonto(guild, user, ponto, finalizado = false) {
   const canal = await guild.channels.fetch(CANAL_PONTO).catch(() => null);
   if (!canal || !canal.isTextBased()) return;
 
-  const embed = criarEmbedPonto(user, ponto, finalizado);
-  const comps = finalizado ? [] : botoesPonto(ponto.emPausa);
+  const cor = finalizado ? 0xcc0000 : ponto.emPausa ? 0xff9900 : 0x00b300;
+  const titulo = finalizado ? "📁 Ponto Finalizado" : ponto.emPausa ? "⏸️ Ponto Pausado" : "📂 Bate-Ponto";
+
+  const embed = criarEmbedPonto(user, ponto, titulo, cor, finalizado);
+  const comps = finalizado ? [] : botoesPonto(ponto.emPausa, false);
 
   if (ponto.msg) {
     const msg = await canal.messages.fetch(ponto.msg).catch(() => null);
     if (msg) {
-      await msg.edit({ embeds: [embed], components: comps }).catch(() => {});
+      await msg.edit({ content: `${user}`, embeds: [embed], components: comps }).catch(() => {});
       return;
     }
   }
@@ -472,7 +510,58 @@ async function registrarComandos() {
 
       new SlashCommandBuilder()
         .setName("ponto")
-        .setDescription("Abrir seu ponto eletrônico")
+        .setDescription("Abrir seu ponto eletrônico"),
+
+      new SlashCommandBuilder()
+        .setName("ia")
+        .setDescription("Perguntar para a IA do CBM")
+        .addStringOption(option =>
+          option
+            .setName("pergunta")
+            .setDescription("Pergunta para a IA")
+            .setRequired(true)
+        ),
+
+      new SlashCommandBuilder()
+        .setName("relatorio")
+        .setDescription("Criar relatório de ocorrência")
+        .addStringOption(option =>
+          option
+            .setName("titulo")
+            .setDescription("Título do relatório")
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("tipo")
+            .setDescription("Tipo da ocorrência")
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("local")
+            .setDescription("Local da ocorrência")
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("descricao")
+            .setDescription("Descrição completa")
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName("envolvidos")
+            .setDescription("Envolvidos na ocorrência")
+            .setRequired(false)
+        )
+        .addChannelOption(option =>
+          option
+            .setName("canal")
+            .setDescription("Canal onde enviar o relatório")
+            .setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -577,9 +666,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         const partesNick = (membro.displayName || membro.user.username).split("|");
-        const nomeAtualLimpo = partesNick[0]
-          .replace(/^\[[^\]]+\]\s*/, "")
-          .trim();
+        const nomeAtualLimpo = limparPrefixoDoNick(partesNick[0]).trim();
         const idAtualLimpo = partesNick[1]?.trim() || "0000";
 
         const nomeBase = interaction.options.getString("nome") || nomeAtualLimpo || membro.user.username;
@@ -631,13 +718,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         await removerCargosDePatente(membro);
-
-        const idsExtras = getTodosCargosIds().filter(id => id !== CARGO_REMOVER);
-        for (const cargoId of idsExtras) {
-          if (membro.roles.cache.has(cargoId)) {
-            await membro.roles.remove(cargoId).catch(() => {});
-          }
-        }
+        await removerCargosExtrasCBM(membro);
 
         if (membro.roles.cache.has(CARGO_REMOVER)) {
           await membro.roles.remove(CARGO_REMOVER).catch(() => {});
@@ -795,6 +876,95 @@ client.on(Events.InteractionCreate, async (interaction) => {
           content: "✅ Ponto iniciado no canal de registro.",
           ephemeral: true
         });
+        return;
+      }
+
+      if (interaction.commandName === "ia") {
+        const pergunta = interaction.options.getString("pergunta");
+
+        await interaction.deferReply();
+
+        try {
+          const resposta = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Você é um instrutor profissional do Corpo de Bombeiros Militar. Responda em português do Brasil, de forma clara, objetiva, profissional e útil para ambiente operacional e roleplay."
+              },
+              {
+                role: "user",
+                content: pergunta
+              }
+            ]
+          });
+
+          const texto = resposta.choices[0]?.message?.content || "Sem resposta.";
+
+          const embed = new EmbedBuilder()
+            .setColor(0xcc0000)
+            .setTitle("🚒 CENTRAL DE INTELIGÊNCIA CBM")
+            .setDescription(
+              `**Pergunta:** ${pergunta}\n\n` +
+              `**Resposta:**\n${texto.slice(0, 3500)}`
+            )
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embed] });
+        } catch (error) {
+          console.error("Erro na IA:", error);
+          await interaction.editReply("❌ Erro ao consultar a IA.");
+        }
+
+        return;
+      }
+
+      if (interaction.commandName === "relatorio") {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+          await interaction.reply({
+            content: "❌ Você não tem permissão.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const titulo = interaction.options.getString("titulo");
+        const tipo = interaction.options.getString("tipo");
+        const local = interaction.options.getString("local");
+        const descricao = interaction.options.getString("descricao");
+        const envolvidos = interaction.options.getString("envolvidos") || "Não informado";
+        const canal = interaction.options.getChannel("canal") || interaction.channel;
+
+        if (!canal || !canal.isTextBased()) {
+          await interaction.reply({
+            content: "❌ Canal inválido.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2b8cff)
+          .setTitle(`📋 RELATÓRIO • ${titulo.toUpperCase()}`)
+          .setDescription(
+            `**Tipo:** ${tipo}\n` +
+            `**Local:** ${local}\n` +
+            `**Envolvidos:** ${envolvidos}\n\n` +
+            `**Descrição da ocorrência:**\n${descricao}`
+          )
+          .setFooter({
+            text: `Relatório enviado por ${interaction.user.username}`
+          })
+          .setTimestamp();
+
+        await canal.send({ embeds: [embed] });
+
+        await interaction.reply({
+          content: `✅ Relatório enviado em ${canal}.`,
+          ephemeral: true
+        });
+
         return;
       }
     }
@@ -1140,6 +1310,8 @@ if (!validarEnv()) {
 
 http.createServer((req, res) => {
   res.end("BOT ONLINE");
-}).listen(process.env.PORT || 3000);
+}).listen(process.env.PORT || 3000, () => {
+  console.log("🌐 Servidor web ativo");
+});
 
 client.login(TOKEN);
