@@ -24,16 +24,23 @@ const client = new Client({
   ]
 });
 
-const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
-const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
-const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
+// ===================== VARIÁVEIS =====================
+const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
+const CANAL_PORTARIA = process.env.CANAL_PORTARIA;
+const CANAL_APROVACAO = process.env.CANAL_APROVACAO;
+const CANAL_PONTO = process.env.CANAL_PONTO;
+const CARGO_AGUARDANDO = process.env.CARGO_AGUARDANDO;
+
 const CARGO_REMOVER = "1483562465823559696";
 
+// ===================== MEMÓRIA =====================
 let MENSAGEM_PAINEL = "";
+const pontos = new Map();
 
+// ===================== CONFIG =====================
 const IMAGEM_PAINEL =
   "https://media.discordapp.net/attachments/1487903044644507902/1487903455195435081/Gemini_Generated_Image_i5bryei5bryei5br_1.png?ex=69cad593&is=69c98413&hm=8898ac5e02b3f5d45f075b9338122e0b8aa105e91d8d83778ae9ec341f3ed6fa&=&format=webp&quality=lossless";
 
@@ -115,14 +122,16 @@ const CARGOS = {
   }
 };
 
+// ===================== FUNÇÕES GERAIS =====================
 function validarEnv() {
   const faltando = [];
 
-  if (!process.env.TOKEN) faltando.push("TOKEN");
-  if (!CANAL_PORTARIA) faltando.push("CANAL_PORTARIA");
-  if (!CANAL_APROVACAO) faltando.push("CANAL_APROVACAO");
+  if (!TOKEN) faltando.push("TOKEN");
   if (!CLIENT_ID) faltando.push("CLIENT_ID");
   if (!GUILD_ID) faltando.push("GUILD_ID");
+  if (!CANAL_PORTARIA) faltando.push("CANAL_PORTARIA");
+  if (!CANAL_APROVACAO) faltando.push("CANAL_APROVACAO");
+  if (!CANAL_PONTO) faltando.push("CANAL_PONTO");
 
   if (faltando.length) {
     console.error("❌ Variáveis ausentes:", faltando.join(", "));
@@ -193,117 +202,90 @@ async function aplicarCargoENickname(membro, cargoNome, nomeBase, idBase) {
   return { prefixo, apelidoFinal, configCargo };
 }
 
-async function registrarComandos() {
-  try {
-    const comandos = [
-      new SlashCommandBuilder()
-        .setName("anuncio")
-        .setDescription("Enviar um anúncio em embed")
-        .addStringOption(option =>
-          option.setName("titulo").setDescription("Título do anúncio").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("mensagem").setDescription("Mensagem do anúncio").setRequired(true)
-        )
-        .addChannelOption(option =>
-          option.setName("canal").setDescription("Canal onde será enviado").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("promover")
-        .setDescription("Promover um militar")
-        .addUserOption(option =>
-          option.setName("membro").setDescription("Militar").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("cargo").setDescription("Novo cargo").setRequired(true)
-            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
-        )
-        .addStringOption(option =>
-          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
-        )
-        .addStringOption(option =>
-          option.setName("id").setDescription("ID para o apelido").setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("rebaixar")
-        .setDescription("Rebaixar um militar")
-        .addUserOption(option =>
-          option.setName("membro").setDescription("Militar").setRequired(true)
-        )
-        .addStringOption(option =>
-          option.setName("cargo").setDescription("Cargo de destino").setRequired(true)
-            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
-        )
-        .addStringOption(option =>
-          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
-        )
-        .addStringOption(option =>
-          option.setName("id").setDescription("ID para o apelido").setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("demitir")
-        .setDescription("Demitir um militar")
-        .addUserOption(option =>
-          option.setName("membro").setDescription("Militar").setRequired(true)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("ficha")
-        .setDescription("Ver ficha de um militar")
-        .addUserOption(option =>
-          option.setName("membro").setDescription("Militar").setRequired(true)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("operacao")
-        .setDescription("Criar anúncio de operação")
-        .addStringOption(option =>
-          option.setName("nome").setDescription("Nome da operação").setRequired(true)
-        )
-        .addChannelOption(option =>
-          option.setName("canal").setDescription("Canal do anúncio").setRequired(false)
-        )
-        .addStringOption(option =>
-          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-      new SlashCommandBuilder()
-        .setName("alerta")
-        .setDescription("Enviar alerta rápido")
-        .addStringOption(option =>
-          option.setName("mensagem").setDescription("Mensagem do alerta").setRequired(true)
-        )
-        .addChannelOption(option =>
-          option.setName("canal").setDescription("Canal do alerta").setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    ].map(c => c.toJSON());
-
-    const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: comandos }
-    );
-
-    console.log("✅ Slash commands registrados.");
-  } catch (err) {
-    console.error("❌ Erro ao registrar comandos:", err);
-  }
+// ===================== PONTO =====================
+function formatarTempo(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}h ${m}m ${sec}s`;
 }
 
+function criarEmbedPonto(user, ponto, finalizado = false) {
+  const agora = Date.now();
+
+  let tempoPausa = 0;
+  for (const p of ponto.pausas) {
+    tempoPausa += p.fim - p.inicio;
+  }
+
+  if (ponto.emPausa && ponto.pausaInicio) {
+    tempoPausa += agora - ponto.pausaInicio;
+  }
+
+  const baseFim = finalizado && ponto.fim ? ponto.fim : agora;
+  const tempoTotal = Math.max(0, baseFim - ponto.inicio - tempoPausa);
+
+  return new EmbedBuilder()
+    .setColor(finalizado ? 0xcc0000 : ponto.emPausa ? 0xff9900 : 0x00b300)
+    .setTitle(finalizado ? "📁 Ponto Finalizado" : "📂 Bate-Ponto")
+    .setDescription(
+      `👤 **Usuário:** ${user}\n` +
+      `⏱️ **Início:** <t:${Math.floor(ponto.inicio / 1000)}:F>\n` +
+      (ponto.fim ? `🏁 **Fim:** <t:${Math.floor(ponto.fim / 1000)}:F>\n` : "") +
+      `📊 **Tempo:** ${formatarTempo(tempoTotal)}\n` +
+      `📌 **Status:** ${finalizado ? "FINALIZADO" : ponto.emPausa ? "PAUSADO" : "EM SERVIÇO"}`
+    )
+    .setFooter({ text: "Sistema de ponto • CBM BOT" })
+    .setTimestamp();
+}
+
+function botoesPonto(pausa) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("pausar")
+        .setLabel("Pausar")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(pausa),
+      new ButtonBuilder()
+        .setCustomId("voltar")
+        .setLabel("Voltar")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!pausa),
+      new ButtonBuilder()
+        .setCustomId("finalizar")
+        .setLabel("Finalizar")
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
+}
+
+async function atualizarPonto(guild, user, ponto, finalizado = false) {
+  const canal = await guild.channels.fetch(CANAL_PONTO).catch(() => null);
+  if (!canal || !canal.isTextBased()) return;
+
+  const embed = criarEmbedPonto(user, ponto, finalizado);
+  const comps = finalizado ? [] : botoesPonto(ponto.emPausa);
+
+  if (ponto.msg) {
+    const msg = await canal.messages.fetch(ponto.msg).catch(() => null);
+    if (msg) {
+      await msg.edit({ embeds: [embed], components: comps }).catch(() => {});
+      return;
+    }
+  }
+
+  const nova = await canal.send({
+    content: `${user}`,
+    embeds: [embed],
+    components: comps
+  }).catch(() => null);
+
+  if (nova) ponto.msg = nova.id;
+}
+
+// ===================== PAINEL =====================
 function criarSelectCargo(userId, selecionado = null) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -402,6 +384,111 @@ async function garantirPainel() {
   }
 }
 
+// ===================== COMANDOS =====================
+async function registrarComandos() {
+  try {
+    const comandos = [
+      new SlashCommandBuilder()
+        .setName("anuncio")
+        .setDescription("Abrir painel de anúncio")
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("promover")
+        .setDescription("Promover um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName("cargo").setDescription("Novo cargo").setRequired(true)
+            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
+        )
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("id").setDescription("ID para o apelido").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("rebaixar")
+        .setDescription("Rebaixar um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName("cargo").setDescription("Cargo de destino").setRequired(true)
+            .addChoices(...Object.keys(CARGOS).map(nome => ({ name: nome, value: nome })))
+        )
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome/QRA para o apelido").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("id").setDescription("ID para o apelido").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("demitir")
+        .setDescription("Demitir um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("ficha")
+        .setDescription("Ver ficha de um militar")
+        .addUserOption(option =>
+          option.setName("membro").setDescription("Militar").setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("operacao")
+        .setDescription("Criar anúncio de operação")
+        .addStringOption(option =>
+          option.setName("nome").setDescription("Nome da operação").setRequired(true)
+        )
+        .addChannelOption(option =>
+          option.setName("canal").setDescription("Canal do anúncio").setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName("imagem").setDescription("Link da imagem (opcional)").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("alerta")
+        .setDescription("Enviar alerta rápido")
+        .addStringOption(option =>
+          option.setName("mensagem").setDescription("Mensagem do alerta").setRequired(true)
+        )
+        .addChannelOption(option =>
+          option.setName("canal").setDescription("Canal do alerta").setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+      new SlashCommandBuilder()
+        .setName("ponto")
+        .setDescription("Abrir seu ponto eletrônico")
+    ].map(c => c.toJSON());
+
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: comandos }
+    );
+
+    console.log("✅ Slash commands registrados.");
+  } catch (err) {
+    console.error("❌ Erro ao registrar comandos:", err);
+  }
+}
+
+// ===================== READY =====================
 client.once(Events.ClientReady, async () => {
   console.log(`🔥 Bot online: ${client.user.tag}`);
 
@@ -413,8 +500,10 @@ client.once(Events.ClientReady, async () => {
   }, 5 * 60 * 1000);
 });
 
+// ===================== INTERAÇÕES =====================
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // ---------- SLASH COMMANDS ----------
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === "anuncio") {
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
@@ -425,38 +514,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return;
         }
 
-        const titulo = interaction.options.getString("titulo");
-        const mensagemBruta = interaction.options.getString("mensagem");
-        const canal = interaction.options.getChannel("canal");
-        const imagem = interaction.options.getString("imagem");
+        const modal = new ModalBuilder()
+          .setCustomId("modal_anuncio")
+          .setTitle("Criar Anúncio");
 
-        if (!canal || !canal.isTextBased()) {
-          await interaction.reply({
-            content: "❌ Canal inválido.",
-            ephemeral: true
-          });
-          return;
-        }
+        const tituloInput = new TextInputBuilder()
+          .setCustomId("titulo")
+          .setLabel("Título do anúncio")
+          .setPlaceholder("Ex: Operação Fênix")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
 
-        const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+        const mensagemInput = new TextInputBuilder()
+          .setCustomId("mensagem")
+          .setLabel("Mensagem")
+          .setPlaceholder("Use \\n para quebrar linha")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
 
-        const embed = new EmbedBuilder()
-          .setColor(0xcc0000)
-          .setTitle(`🚒 ${titulo.toUpperCase()}`)
-          .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`)
-          .setFooter({ text: `CBM • Anúncio enviado por ${interaction.user.username}` })
-          .setTimestamp();
+        const canalInput = new TextInputBuilder()
+          .setCustomId("canal")
+          .setLabel("ID do canal")
+          .setPlaceholder("Cole o ID do canal")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
 
-        if (imagem && imagem.startsWith("http")) {
-          embed.setImage(imagem);
-        }
+        const imagemInput = new TextInputBuilder()
+          .setCustomId("imagem")
+          .setLabel("Link da imagem (opcional)")
+          .setPlaceholder("https://...")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
 
-        await canal.send({ embeds: [embed] });
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(tituloInput),
+          new ActionRowBuilder().addComponents(mensagemInput),
+          new ActionRowBuilder().addComponents(canalInput),
+          new ActionRowBuilder().addComponents(imagemInput)
+        );
 
-        await interaction.reply({
-          content: `✅ Anúncio enviado em ${canal}.`,
-          ephemeral: true
-        });
+        await interaction.showModal(modal);
         return;
       }
 
@@ -488,7 +585,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const nomeBase = interaction.options.getString("nome") || nomeAtualLimpo || membro.user.username;
         const idBase = interaction.options.getString("id") || idAtualLimpo;
 
-        const { prefixo, apelidoFinal, configCargo } = await aplicarCargoENickname(
+        const { prefixo, apelidoFinal } = await aplicarCargoENickname(
           membro,
           cargoNome,
           nomeBase,
@@ -669,8 +766,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply({ content: `✅ Alerta enviado em ${canal}.`, ephemeral: true });
         return;
       }
+
+      if (interaction.commandName === "ponto") {
+        const id = interaction.user.id;
+
+        if (pontos.has(id)) {
+          await interaction.reply({
+            content: "⚠️ Você já tem um ponto aberto.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const ponto = {
+          inicio: Date.now(),
+          pausas: [],
+          emPausa: false,
+          pausaInicio: null,
+          fim: null,
+          msg: null
+        };
+
+        pontos.set(id, ponto);
+
+        await atualizarPonto(interaction.guild, interaction.user, ponto, false);
+
+        await interaction.reply({
+          content: "✅ Ponto iniciado no canal de registro.",
+          ephemeral: true
+        });
+        return;
+      }
     }
 
+    // ---------- BOTÕES ----------
     if (interaction.isButton() && interaction.customId === "abrir_form") {
       const modal = new ModalBuilder()
         .setCustomId("form_ingresso_cbm")
@@ -715,71 +844,64 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === "form_ingresso_cbm") {
-      const qra = interaction.fields.getTextInputValue("qra");
-      const id = interaction.fields.getTextInputValue("id");
-      const cargo = interaction.fields.getTextInputValue("cargo");
-      const unidade = interaction.fields.getTextInputValue("unidade");
-
-      const canalAprovacao = await interaction.guild.channels.fetch(CANAL_APROVACAO).catch(() => null);
-      if (!canalAprovacao) {
-        await interaction.reply({
-          content: "❌ Canal de aprovação não encontrado. Verifique o ID.",
-          ephemeral: true
-        });
+    if (interaction.isButton() && ["pausar", "voltar", "finalizar"].includes(interaction.customId)) {
+      const ponto = pontos.get(interaction.user.id);
+      if (!ponto) {
+        await interaction.reply({ content: "❌ Você não possui ponto aberto.", ephemeral: true });
         return;
       }
 
-      const embed = new EmbedBuilder()
-        .setColor(0x2b8cff)
-        .setTitle("📥 Nova Solicitação")
-        .setDescription(
-          `**Solicitante:** ${interaction.user}\n` +
-          `**Nome/QRA:** ${qra}\n` +
-          `**ID:** ${id}\n` +
-          `**Cargo informado:** ${cargo}\n` +
-          `**Unidade informada:** ${unidade}`
-        )
-        .setFooter({ text: `User ID: ${interaction.user.id}` })
-        .setTimestamp();
+      if (interaction.customId === "pausar") {
+        if (ponto.emPausa) {
+          await interaction.reply({ content: "⚠️ Já está pausado.", ephemeral: true });
+          return;
+        }
 
-      await canalAprovacao.send({
-        content: `${interaction.user}`,
-        embeds: [embed],
-        components: [
-          criarSelectCargo(interaction.user.id),
-          criarBotoesAprovacao(interaction.user.id)
-        ]
-      });
+        ponto.emPausa = true;
+        ponto.pausaInicio = Date.now();
 
-      await interaction.reply({
-        content: "✅ Solicitação enviada com sucesso.",
-        ephemeral: true
-      });
+        await atualizarPonto(interaction.guild, interaction.user, ponto, false);
+        await interaction.reply({ content: "⏸️ Ponto pausado.", ephemeral: true });
+        return;
+      }
 
-      return;
-    }
+      if (interaction.customId === "voltar") {
+        if (!ponto.emPausa || !ponto.pausaInicio) {
+          await interaction.reply({ content: "⚠️ Seu ponto não está pausado.", ephemeral: true });
+          return;
+        }
 
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith("cargo_")) {
-      const userId = interaction.customId.split("_")[1];
-      const cargoEscolhido = interaction.values[0];
+        ponto.pausas.push({
+          inicio: ponto.pausaInicio,
+          fim: Date.now()
+        });
 
-      const embedAtual = interaction.message.embeds?.[0];
-      const novoEmbed = EmbedBuilder.from(embedAtual);
+        ponto.emPausa = false;
+        ponto.pausaInicio = null;
 
-      await interaction.update({
-        embeds: [novoEmbed],
-        components: [
-          criarSelectCargo(userId, cargoEscolhido),
-          criarBotoesAprovacao(userId, cargoEscolhido)
-        ]
-      });
+        await atualizarPonto(interaction.guild, interaction.user, ponto, false);
+        await interaction.reply({ content: "▶️ Ponto retomado.", ephemeral: true });
+        return;
+      }
 
-      await interaction.followUp({
-        content: `✅ Selecionado: **${cargoEscolhido}**`,
-        ephemeral: true
-      }).catch(() => {});
-      return;
+      if (interaction.customId === "finalizar") {
+        if (ponto.emPausa && ponto.pausaInicio) {
+          ponto.pausas.push({
+            inicio: ponto.pausaInicio,
+            fim: Date.now()
+          });
+          ponto.emPausa = false;
+          ponto.pausaInicio = null;
+        }
+
+        ponto.fim = Date.now();
+
+        await atualizarPonto(interaction.guild, interaction.user, ponto, true);
+        pontos.delete(interaction.user.id);
+
+        await interaction.reply({ content: "📁 Ponto finalizado.", ephemeral: true });
+        return;
+      }
     }
 
     if (interaction.isButton() && interaction.customId.startsWith("aprovar_")) {
@@ -839,7 +961,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         embeds: [embedAprovado],
         components: []
       });
-
       return;
     }
 
@@ -861,7 +982,119 @@ client.on(Events.InteractionCreate, async (interaction) => {
         embeds: [embedReprovado],
         components: []
       });
+      return;
+    }
 
+    // ---------- SELECT MENU ----------
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith("cargo_")) {
+      const userId = interaction.customId.split("_")[1];
+      const cargoEscolhido = interaction.values[0];
+
+      const embedAtual = interaction.message.embeds?.[0];
+      const novoEmbed = EmbedBuilder.from(embedAtual);
+
+      await interaction.update({
+        embeds: [novoEmbed],
+        components: [
+          criarSelectCargo(userId, cargoEscolhido),
+          criarBotoesAprovacao(userId, cargoEscolhido)
+        ]
+      });
+
+      await interaction.followUp({
+        content: `✅ Selecionado: **${cargoEscolhido}**`,
+        ephemeral: true
+      }).catch(() => {});
+      return;
+    }
+
+    // ---------- MODAIS ----------
+    if (interaction.isModalSubmit() && interaction.customId === "modal_anuncio") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({
+          content: "❌ Você não tem permissão para usar este comando.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const titulo = interaction.fields.getTextInputValue("titulo");
+      const mensagemBruta = interaction.fields.getTextInputValue("mensagem");
+      const canalId = interaction.fields.getTextInputValue("canal");
+      const imagem = interaction.fields.getTextInputValue("imagem");
+
+      const canal = await interaction.guild.channels.fetch(canalId).catch(() => null);
+      if (!canal || !canal.isTextBased()) {
+        await interaction.reply({
+          content: "❌ Canal inválido. Verifique o ID do canal.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const mensagem = mensagemBruta.replace(/\\n/g, "\n");
+
+      const embed = new EmbedBuilder()
+        .setColor(0xcc0000)
+        .setTitle(`🚒 ${titulo.toUpperCase()}`)
+        .setDescription(`━━━━━━━━━━━━━━━━━━━━\n\n${mensagem}\n\n━━━━━━━━━━━━━━━━━━━━`)
+        .setFooter({ text: `CBM • Anúncio enviado por ${interaction.user.username}` })
+        .setTimestamp();
+
+      if (imagem && imagem.startsWith("http")) {
+        embed.setImage(imagem);
+      }
+
+      await canal.send({ embeds: [embed] });
+
+      await interaction.reply({
+        content: `✅ Anúncio enviado em ${canal}.`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === "form_ingresso_cbm") {
+      const qra = interaction.fields.getTextInputValue("qra");
+      const id = interaction.fields.getTextInputValue("id");
+      const cargo = interaction.fields.getTextInputValue("cargo");
+      const unidade = interaction.fields.getTextInputValue("unidade");
+
+      const canalAprovacao = await interaction.guild.channels.fetch(CANAL_APROVACAO).catch(() => null);
+      if (!canalAprovacao) {
+        await interaction.reply({
+          content: "❌ Canal de aprovação não encontrado. Verifique o ID.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2b8cff)
+        .setTitle("📥 Nova Solicitação")
+        .setDescription(
+          `**Solicitante:** ${interaction.user}\n` +
+          `**Nome/QRA:** ${qra}\n` +
+          `**ID:** ${id}\n` +
+          `**Cargo informado:** ${cargo}\n` +
+          `**Unidade informada:** ${unidade}`
+        )
+        .setFooter({ text: `User ID: ${interaction.user.id}` })
+        .setTimestamp();
+
+      await canalAprovacao.send({
+        content: `${interaction.user}`,
+        embeds: [embed],
+        components: [
+          criarSelectCargo(interaction.user.id),
+          criarBotoesAprovacao(interaction.user.id)
+        ]
+      });
+
+      await interaction.reply({
+        content: "✅ Solicitação enviada com sucesso.",
+        ephemeral: true
+      });
       return;
     }
   } catch (err) {
@@ -883,6 +1116,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// ===================== ERROS =====================
 process.on("unhandledRejection", (reason) => {
   console.error("❌ UNHANDLED REJECTION:", reason);
 });
@@ -899,16 +1133,13 @@ client.on("warn", (info) => {
   console.warn("⚠️ WARN:", info);
 });
 
+// ===================== START =====================
 if (!validarEnv()) {
   process.exit(1);
 }
 
-client.login(process.env.TOKEN);
-
-const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-  res.end("CBM BOT ONLINE");
-}).listen(PORT, () => {
-  console.log(`🌐 Servidor web ativo na porta ${PORT}`);
-});
+  res.end("BOT ONLINE");
+}).listen(process.env.PORT || 3000);
+
+client.login(TOKEN);
